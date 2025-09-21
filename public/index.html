@@ -1,344 +1,382 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Jorn Sports Analytics</title>
-  <link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Jorn Sports Analytics - Futebol</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    <!-- Chart.js para os gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
-<body>
-<div class="container">
-  <!-- Header -->
-  <div class="header">
-    <h1>JORN SPORTS</h1>
-    <div class="subtitle">Análise Esportiva Avançada</div>
-  </div>
+<body class="bg-gray-900 text-white font-sans">
 
-  <div class="error-message" id="errorMessage"></div>
-
-  <div class="form-container">
-    <!-- Perfil Biométrico -->
-    <div class="form-section">
-      <div class="section-header">
-        <div class="section-icon">👤</div>
-        <div class="section-title">Perfil Biométrico</div>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label" for="nome">Identificação do Atleta</label>
-          <input type="text" id="nome" class="form-input" placeholder="Nome completo" required>
+    <!-- Modal de Relatórios Salvos -->
+    <div id="reports-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
+        <div class="bg-gray-800 rounded-lg shadow-xl w-full md:w-3/4 lg:w-2/3 max-h-[90vh] flex flex-col">
+            <div class="p-4 border-b border-gray-700 flex justify-between items-center">
+                <h2 class="text-2xl font-bold text-orange-400">Relatórios Salvos</h2>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-white text-4xl leading-none">&times;</button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-grow" id="reports-list-container">
+                <!-- A lista de relatórios será inserida aqui -->
+            </div>
         </div>
-
-        <div class="form-group">
-          <label class="form-label" for="idade">Idade Cronológica</label>
-          <input type="number" id="idade" class="form-input" min="10" max="80" placeholder="Anos" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="sexo">Perfil Biológico</label>
-          <select id="sexo" class="form-select" required>
-            <option value="">Selecione o perfil...</option>
-            <option value="masculino">Masculino</option>
-            <option value="feminino">Feminino</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="experiencia">Nível de Expertise</label>
-          <select id="experiencia" class="form-select" required>
-            <option value="">Avalie sua experiência...</option>
-            <option value="iniciante">Novato (0–1 ano)</option>
-            <option value="intermediario">Desenvolvido (1–3 anos)</option>
-            <option value="avancado">Avançado (3+ anos)</option>
-            <option value="atleta">Elite Competitiva</option>
-          </select>
-        </div>
-      </div>
     </div>
 
-    <!-- Antropometria -->
-    <div class="form-section">
-      <div class="section-header">
-        <div class="section-icon">📏</div>
-        <div class="section-title">Análise Antropométrica</div>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label" for="altura">Estatura (cm)</label>
-          <input type="number" id="altura" class="form-input" min="140" max="220" placeholder="Altura em centímetros" required>
+    <div class="container mx-auto p-4 md:p-8">
+        
+        <header class="text-center mb-10">
+             <div class="flex justify-center items-center mb-4">
+                <h1 class="text-4xl md:text-5xl font-bold text-orange-500 tracking-wider">JORN SPORTS</h1>
+            </div>
+            <p class="text-gray-400 text-lg">Análise de Potencial e Desempenho para Atletas de Futebol</p>
+        </header>
+        
+        <div class="text-center mb-8">
+            <button id="view-reports-btn" class="bg-gray-700 hover:bg-gray-600 text-orange-400 font-bold py-2 px-6 rounded-lg transition">
+                Ver Relatórios Salvos
+            </button>
         </div>
 
-        <div class="form-group">
-          <label class="form-label" for="peso">Massa Corporal (kg)</label>
-          <input type="number" id="peso" class="form-input" min="35" max="200" step="0.1" placeholder="Peso em quilogramas" required>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="envergadura">Envergadura (cm) <span class="optional-label">(Opcional)</span></label>
-          <input type="number" id="envergadura" class="form-input" min="140" max="250" placeholder="Abertura dos braços">
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="percentualGordura">Composição Corporal (%) <span class="optional-label">(Opcional)</span></label>
-          <input type="number" id="percentualGordura" class="form-input" min="5" max="50" step="0.1" placeholder="% de gordura corporal">
-        </div>
-      </div>
-    </div>
-
-    <!-- Capacidades Físicas -->
-    <div class="form-section">
-      <div class="section-header">
-        <div class="section-icon">⚡</div>
-        <div class="section-title">Capacidades Físicas</div>
-      </div>
-      <div class="form-grid">
-        <div class="form-group">
-          <label class="form-label" for="forca">Potência/Força</label>
-          <select id="forca" class="form-select" required>
-            <option value="">Avalie sua força...</option>
-            <option value="1">1 - Mínima</option><option value="2">2</option>
-            <option value="3">3</option><option value="4">4</option>
-            <option value="5">5 - Média</option><option value="6">6</option>
-            <option value="7">7</option><option value="8">8</option>
-            <option value="9">9</option><option value="10">10 - Elite</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="resistencia">Sistema Cardiorrespiratório</label>
-          <select id="resistencia" class="form-select" required>
-            <option value="">Avalie sua resistência...</option>
-            <option value="1">1 - Mínima</option><option value="2">2</option>
-            <option value="3">3</option><option value="4">4</option>
-            <option value="5">5 - Média</option><option value="6">6</option>
-            <option value="7">7</option><option value="8">8</option>
-            <option value="9">9</option><option value="10">10 - Elite</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="velocidade">Velocidade & Agilidade</label>
-          <select id="velocidade" class="form-select" required>
-            <option value="">Avalie sua velocidade...</option>
-            <option value="1">1 - Mínima</option><option value="2">2</option>
-            <option value="3">3</option><option value="4">4</option>
-            <option value="5">5 - Média</option><option value="6">6</option>
-            <option value="7">7</option><option value="8">8</option>
-            <option value="9">9</option><option value="10">10 - Elite</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="flexibilidade">Flexibilidade</label>
-          <select id="flexibilidade" class="form-select" required>
-            <option value="">Avalie sua flexibilidade...</option>
-            <option value="1">1 - Mínima</option><option value="2">2</option>
-            <option value="3">3</option><option value="4">4</option>
-            <option value="5">5 - Média</option><option value="6">6</option>
-            <option value="7">7</option><option value="8">8</option>
-            <option value="9">9</option><option value="10">10 - Elite</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label class="form-label" for="coordenacao">Coordenação Motora</label>
-          <select id="coordenacao" class="form-select" required>
-            <option value="">Avalie sua coordenação...</option>
-            <option value="1">1 - Mínima</option><option value="2">2</option>
-            <option value="3">3</option><option value="4">4</option>
-            <option value="5">5 - Média</option><option value="6">6</option>
-            <option value="7">7</option><option value="8">8</option>
-            <option value="9">9</option><option value="10">10 - Elite</option>
-          </select>
-        </div>
-<Div>
-</Div>
-  <!-- Desempenho Específico -->
-<div class="form-section stack">
-  <div class="section-header">
-    <div class="section-icon">⏱️</div>
-    <div class="section-title">Desempenho Específico</div>
-  </div>
-
-  <div class="form-grid">
-    <div class="form-group">
-      <label class="form-label" for="distanciaFoco">Distância foco</label>
-      <select id="distanciaFoco" class="form-select" required>
-        <option value="">Selecione...</option>
-        <option>50</option><option>100</option><option>200</option>
-        <option>400</option><option>800</option><option>1500</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="t50">Tempo 50 m (s)</label>
-      <input id="t50" class="form-input" type="number" step="0.01" min="15" max="200" placeholder="ex: 26.50" required>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="t100">Tempo 100 m (s)</label>
-      <input id="t100" class="form-input" type="number" step="0.01" min="30" max="400" placeholder="ex: 57.80" required>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="t200">Tempo 200 m (s)</label>
-      <input id="t200" class="form-input" type="number" step="0.01" min="60" max="1200" placeholder="ex: 130.00" required>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="t400">Tempo 400 m (s)</label>
-      <input id="t400" class="form-input" type="number" step="0.01" min="120" max="2400" placeholder="ex: 280.00" required>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="tDolphin25">25 m Dolphin Kick (s) <span class="optional-label">(Opcional)</span></label>
-      <input id="tDolphin25" class="form-input" type="number" step="0.01" min="8" max="60" placeholder="ex: 14.2">
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="tPeito25">25 m Pernada de Peito (s) <span class="optional-label">(Opcional)</span></label>
-      <input id="tPeito25" class="form-input" type="number" step="0.01" min="10" max="80" placeholder="ex: 18.7">
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="mobOmbro">Mobilidade de Ombro (1–10)</label>
-      <select id="mobOmbro" class="form-select" required>
-        <option value="">Avalie...</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
-      </select>
-    </div>
-
-    <div class="form-group">
-      <label class="form-label" for="mobTornozelo">Mobilidade de Tornozelo (1–10)</label>
-      <select id="mobTornozelo" class="form-select" required>
-        <option value="">Avalie...</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option>
-      </select>
-    </div>
-  </div>
+        <!-- Container para Mensagens de Erro -->
+       <div
+  id="error-container"
+  role="alert"
+  aria-live="assertive"
+  aria-atomic="true"
+  aria-labelledby="error-title"
+  tabindex="-1"
+  class="hidden bg-red-900 border border-red-500 text-red-300 px-4 py-3 rounded-lg mb-6">
+  <strong id="error-title" class="font-bold">Dados Incompletos ou Inválidos!</strong>
+  <ul id="error-list" class="mt-2 list-disc list-inside"></ul>
 </div>
 
-<div class="privacy-note stack">
-  <input type="checkbox" id="consent" style="transform: scale(1.2)" />
-  <label for="consent">Autorizo salvar meus dados localmente neste navegador para continuar depois.</label>
-</div>
+        <main id="form-container" class="space-y-8">
 
-<button class="analyze-btn stack" id="analisarBtn" type="button" onclick="analisarPerfil()">
-  🏊 ANALISAR ESTILO DE NATAÇÃO
-</button>
+            <!-- Seção de Informações Básicas -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
+                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">1. Perfil do Atleta</h2>
 
-  <!-- Resultados -->
-  <div class="results" id="results">
-    <div class="results-header">
-      <h2>RELATÓRIO — Estilo Recomendado</h2>
-      <div class="subtitle">Compatibilidade por Crawl, Costas, Peito e Borboleta</div>
-      <div class="results-actions">
-        <button class="secondary-btn" id="editBtn">✏️ Editar respostas</button>
-        <button class="secondary-btn" id="savePdfBtn">🖨️ Exportar PDF</button>
-      </div>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                    <!-- Coluna Esquerda: Dados -->
+                    <div class="lg:col-span-1">
+                        <!-- Linha: Nome | Sobrenome | Idade -->
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label for="nome" class="block text-sm font-medium text-gray-300 mb-1">Nome <span class="text-red-500">*</span></label>
+                                <input type="text" id="nome" name="Nome" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Apenas letras" required pattern="[a-zA-Z\s]+">
+                            </div>
+                            <div>
+                                <label for="sobrenome" class="block text-sm font-medium text-gray-300 mb-1">Sobrenome <span class="text-red-500">*</span></label>
+                                <input type="text" id="sobrenome" name="Sobrenome" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Apenas letras" required pattern="[a-zA-Z\s]+">
+                            </div>
+                            <div>
+                                <label for="idade" class="block text-sm font-medium text-gray-300 mb-1">Idade <span class="text-red-500">*</span></label>
+                                <input type="number" id="idade" name="Idade" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Anos" required min="4" max="50">
+                            </div>
+                        </div>
+
+                        <!-- Posição Principal (abaixo) -->
+                        <div class="mb-4">
+                            <label for="posicao_atual" class="block text-base font-medium text-gray-300 mb-1">Posição Principal</label>
+                            <select id="posicao_atual" class="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-base md:text-lg leading-relaxed focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
+                                <option value="default" selected disabled>Selecione</option>
+                                <option value="goleiro">Goleiro</option>
+                                <option value="zagueiro">Zagueiro</option>
+                                <option value="lateral">Lateral</option>
+                                <option value="volante">Volante</option>
+                                <option value="meia">Meio-campista</option>
+                                <option value="ponta">Ponta</option>
+                                <option value="atacante">Atacante</option>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-4">
+                            <label for="pe_dominante" class="block text-base font-medium text-gray-300 mb-1">Pé Dominante</label>
+                            <select id="pe_dominante" class="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-base md:text-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
+                                <option value="default" selected disabled>Selecione</option>
+                                <option value="direito">Direito</option>
+                                <option value="esquerdo">Esquerdo</option>
+                                <option value="ambidestro">Ambidestro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Coluna Direita: Mapa (horizontal, alinhado) -->
+                    <div class="lg:col-span-1 flex items-start justify-end">
+                        <div id="tactical-map-container" class="bg-gray-700 p-3 rounded-lg flex items-center justify-center w-full max-w-[420px]">
+                            <!-- SVG do Campo (horizontal / paisagem) com heatmaps -->
+                            <svg id="tactical-map" viewBox="0 0 300 200" class="w-full h-auto max-h-44">
+                                <defs>
+                                    <radialGradient id="heatGradient" cx="50%" cy="50%" r="50%">
+                                        <stop offset="0%" stop-color="rgba(249,115,22,0.95)"/>
+                                        <stop offset="60%" stop-color="rgba(249,115,22,0.65)"/>
+                                        <stop offset="100%" stop-color="rgba(249,115,22,0)"/>
+                                    </radialGradient>
+                                </defs>
+
+                                <rect width="300" height="200" fill="#163D2A"/>
+                                <rect x="10" y="10" width="280" height="180" fill="none" stroke="#f97316" stroke-width="2"/>
+                                <line x1="150" y1="10" x2="150" y2="190" stroke="#f97316" stroke-width="2"/>
+                                <circle cx="150" cy="100" r="18" fill="none" stroke="#f97316" stroke-width="2"/>
+                                <circle cx="150" cy="100" r="2" fill="#f97316"/>
+                                <rect x="250" y="60" width="30" height="80" fill="none" stroke="#f97316" stroke-width="2"/>
+                                <rect x="20" y="60" width="30" height="80" fill="none" stroke="#f97316" stroke-width="2"/>
+
+                                <!-- Heatmap ellipses (invisíveis por padrão via opacity) -->
+                                <ellipse id="heat-goleiro"    class="heatmap" cx="40"  cy="100" rx="40" ry="60" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
+                                <ellipse id="heat-zagueiro"   class="heatmap" cx="90"  cy="100" rx="60" ry="70" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
+                                <ellipse id="heat-lateral"    class="heatmap" cx="70"  cy="100" rx="30" ry="80" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
+                                <ellipse id="heat-volante"    class="heatmap" cx="120" cy="110" rx="80" ry="60" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
+                                <ellipse id="heat-meia"       class="heatmap" cx="160" cy="100" rx="90" ry="70" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
+                                <ellipse id="heat-ponta"      class="heatmap" cx="220" cy="100" rx="30" ry="80" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
+                                <ellipse id="heat-atacante"   class="heatmap" cx="260" cy="100" rx="40" ry="60" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <script>
+                // Protege script antigo (se o avatar foi removido) e inicializa heatmap por seleção
+                (function(){
+                    // evita erros caso avatar-initials não exista
+                    const nome = document.getElementById('nome');
+                    const sobrenome = document.getElementById('sobrenome');
+                    const initialsEl = document.getElementById('avatar-initials');
+                    function updateInitials(){
+                        if(!initialsEl) return;
+                        const n = (nome.value || '').trim();
+                        const s = (sobrenome.value || '').trim();
+                        const inits = ((n[0]||'') + (s[0]||'')).toUpperCase() || 'JD';
+                        initialsEl.textContent = inits;
+                    }
+                    nome && nome.addEventListener && nome.addEventListener('input', updateInitials);
+                    sobrenome && sobrenome.addEventListener && sobrenome.addEventListener('input', updateInitials);
+                    updateInitials();
+                })();
+
+                // Heatmap logic: mostra o heatmap correspondente à posição selecionada
+                (function(){
+                    const mapping = {
+                        'goleiro':    'heat-goleiro',
+                        'zagueiro':   'heat-zagueiro',
+                        'lateral':    'heat-lateral',
+                        'volante':    'heat-volante',
+                        'meia':       'heat-meia',
+                        'ponta':      'heat-ponta',
+                        'atacante':   'heat-atacante'
+                    };
+
+                    // pré-cache dos elementos e configura transição
+                    const heatElements = {};
+                    Object.values(mapping).forEach(id => {
+                        const el = document.getElementById(id);
+                        if(el){
+                            heatElements[id] = el;
+                            el.style.opacity = 0;
+                            el.style.transition = 'opacity .35s ease';
+                            el.style.pointerEvents = 'none';
+                        }
+                    });
+
+                    function hideAll(){
+                        Object.values(heatElements).forEach(el => el.style.opacity = 0);
+                    }
+
+                    function showHeatmapFor(positionKey){
+                        hideAll();
+                        const id = mapping[positionKey];
+                        if(!id) return;
+                        const el = heatElements[id];
+                        if(el){
+                            // garante repaint antes de aplicar opacity para transição
+                            requestAnimationFrame(() => {
+                                el.style.opacity = 0.92;
+                            });
+                        }
+                    }
+
+                    const select = document.getElementById('posicao_atual');
+                    if(!select) return;
+
+                    select.addEventListener('change', (e) => {
+                        showHeatmapFor(e.target.value);
+                    });
+
+                    // Se já houver valor selecionado (ex.: edição), mostra ao carregar
+                    if(select.value && select.value !== 'default'){
+                        showHeatmapFor(select.value);
+                    }
+                })();
+            </script>
+
+            <!-- Seção Antropométrica -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
+                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">2. Dados Antropométricos</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div>
+                        <label for="altura" class="block text-sm font-medium text-gray-300 mb-1">Altura (cm) <span class="text-red-500">*</span></label>
+                        <input type="number" id="altura" name="Altura" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Ex: 182" required>
+                    </div>
+                    <div>
+                        <label for="peso" class="block text-sm font-medium text-gray-300 mb-1">Peso (kg) <span class="text-red-500">*</span></label>
+                        <input type="number" id="peso" name="Peso" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Ex: 78" required>
+                    </div>
+                    <div>
+                        <label for="envergadura" class="block text-sm font-medium text-gray-300 mb-1">Envergadura (cm) (Opcional)</label>
+                        <input type="number" id="envergadura" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Ex: 185">
+                    </div>
+                    <div>
+                        <label for="percentual_gordura" class="block text-sm font-medium text-gray-300 mb-1">% Gordura (Opcional)</label>
+                        <input type="text" inputmode="decimal" id="percentual_gordura" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Ex: 8,5">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Seção de Capacidades Físicas -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
+                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">3. Capacidades Físicas</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div>
+                        <label for="velocidade_sprint" class="block text-sm font-medium text-gray-300 mb-1">Velocidade (Sprint 20m) (Opcional)</label>
+                        <input type="number" id="velocidade_sprint" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Segundos">
+                    </div>
+                    <div>
+                        <label for="salto_vertical" class="block text-sm font-medium text-gray-300 mb-1">Salto Vertical (cm) (Opcional)</label>
+                        <input type="number" id="salto_vertical" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Altura em cm">
+                    </div>
+                    <div>
+                        <label for="agilidade" class="block text-sm font-medium text-gray-300 mb-1">Agilidade (T-Test) (Opcional)</label>
+                        <input type="number" id="agilidade" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Segundos">
+                    </div>
+                    <div>
+                        <label for="resistencia" class="block text-sm font-medium text-gray-300 mb-1">Resistência (Yo-Yo Test) (Opcional)</label>
+                        <input type="text" id="resistencia" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Nível/Distância">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Seção de Habilidades Técnicas -->
+            <section class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
+                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">4. Habilidades Técnicas</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="controle_bola" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Controle de Bola</span><span id="controle_bola_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="controle_bola" name="Controle de Bola" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="drible" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Drible</span><span id="drible_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="drible" name="Drible" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="passe_curto" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Passe Curto</span><span id="passe_curto_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="passe_curto" name="Passe Curto" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="passe_longo" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Passe Longo</span><span id="passe_longo_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="passe_longo" name="Passe Longo" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="finalizacao" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Finalização</span><span id="finalizacao_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="finalizacao" name="Finalização" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="cabeceio" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Cabeceio</span><span id="cabeceio_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="cabeceio" name="Cabeceio" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="desarme" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Desarme</span><span id="desarme_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="desarme" name="Desarme" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="visao_jogo" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Visão de Jogo</span><span id="visao_jogo_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="visao_jogo" name="Visão de Jogo" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="compostura" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Compostura</span><span id="compostura_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="compostura" name="Compostura" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                    <!-- Slider Item -->
+                    <div class="slider-container">
+                        <label for="agressividade" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Agressividade</span><span id="agressividade_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="agressividade" name="Agressividade" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                    </div>
+                </div>
+            </section>
+
+            <div class="flex justify-center mt-10">
+                <button id="analisarBtn" class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-8 rounded-lg text-lg transition-transform transform hover:scale-105 shadow-lg">
+                    ✨ Gerar Análise com IA
+                </button>
+            </div>
+
+        </main>
+
+        <!-- Área de Resultados -->
+        <div id="results" class="hidden mt-12">
+            <div id="loading" class="hidden text-center">
+                <p class="text-lg text-orange-400">Analisando dados com a IA do Gemini...</p>
+                <div class="spinner"></div>
+            </div>
+            <div id="results-content" class="hidden bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 space-y-6">
+                <h2 class="text-3xl font-bold text-center mb-4 text-orange-400" id="report-title"></h2>
+                
+                <!-- Gráfico e Análise -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-gray-700 p-4 rounded-lg chart-container">
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Visualização de Habilidades</h3>
+                        <canvas id="skillChart"></canvas>
+                    </div>
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Relatório da IA</h3>
+                        <div id="ia-analysis"></div>
+                    </div>
+                </div>
+
+                <!-- Comparação e Plano de Treino -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Jogador Comparável</h3>
+                        <div id="player-comparison"></div>
+                    </div>
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Plano de Treinamento Sugerido</h3>
+                        <div id="training-plan"></div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Análise Quantitativa</h3>
+                        <div id="eval-summary-content"></div>
+                    </div>
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Scores por Posição</h3>
+                        <div id="eval-positions-content"></div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+            </div>
+            
+        </div>
+
     </div>
 
-    <div class="results-content" id="resultsContent">
-      <div class="loading">
-        <div class="loading-spinner"></div>
-        <div class="loading-text">Processando dados...</div>
-      </div>
-
-      <div class="chart-wrap" style="display:none">
-        <canvas id="attrChart" width="680" height="340" aria-label="Comparativo de atributos" role="img"></canvas>
-      </div>
-      <div id="methodNote" class="method-note" aria-live="polite"></div>
-    </div>
-  </div>
-</div>
-
-<script>
-/* ========= SAVE/RESTORE (v2, retrocompatível) ========= */
-const FORM_STORAGE_KEY = "jornForm";
-const FORM_VERSION = 2;
-
-// Campos atuais do formulário (inclui novos de desempenho/mobilidade)
-const FIELDS_V2 = [
-  "nome","idade","sexo","experiencia",
-  "altura","peso","envergadura","percentualGordura",
-  "forca","resistencia","velocidade","flexibilidade","coordenacao",
-  // novos:
-  "distanciaFoco","t50","t100","t200","t400","tDolphin25","tPeito25",
-  "mobOmbro","mobTornozelo",
-  // opcional: se você manteve “concentracao” para técnica/consistência
-  "concentracao"
-];
-
-// Campos antigos que podem existir no storage (serão ignorados se não houver input correspondente)
-const LEGACY_FIELDS = ["competitividade","trabalhoEquipe","riscoTolerancia"];
-
-// util: obtém valor de um campo se existir
-function getVal(id){
-  const el = document.getElementById(id);
-  return el ? el.value : null;
-}
-
-// Salva somente se o consentimento estiver marcado
-function saveForm(){
-  const consent = document.getElementById('consent');
-  if (!consent || !consent.checked) return;
-
-  const data = { __version: FORM_VERSION, __ts: Date.now() };
-  // salva os campos “atuais”
-  FIELDS_V2.forEach(id => { data[id] = getVal(id); });
-
-  // se por acaso ainda existirem campos legados no DOM, salvamos também (não atrapalha)
-  LEGACY_FIELDS.forEach(id => {
-    const v = getVal(id);
-    if (v !== null) data[id] = v;
-  });
-
-  localStorage.setItem(FORM_STORAGE_KEY, JSON.stringify(data));
-}
-
-// Restaura o que houver no storage, preenchendo somente elementos existentes no DOM
-function restoreForm(){
-  const raw = localStorage.getItem(FORM_STORAGE_KEY);
-  if (!raw) return;
-  try{
-    const data = JSON.parse(raw);
-    Object.entries(data).forEach(([k,v])=>{
-      const el = document.getElementById(k);
-      if (el != null && v != null) el.value = v;
-    });
-  }catch(e){
-    // se algo der errado na leitura, não faz nada
-  }
-}
-
-// Auto-save: sempre que o usuário alterar um input/select, tentamos salvar (se houver consentimento)
-let _saveTimer = null;
-function queueSave(){
-  clearTimeout(_saveTimer);
-  _saveTimer = setTimeout(saveForm, 250);
-}
-
-// Inicializa restauração e listeners
-document.addEventListener("DOMContentLoaded", () => {
-  restoreForm();
-
-  // observa mudanças em inputs/selects relevantes
-  const selectors = [
-    ".form-input","input[type='number']","input[type='text']",
-    "select",".form-select"
-  ];
-  document.querySelectorAll(selectors.join(",")).forEach(el=>{
-    el.addEventListener("input", queueSave);
-    el.addEventListener("change", queueSave);
-  });
-
-  // se o usuário marcar/desmarcar o consentimento, salva/para de salvar
-  const consent = document.getElementById('consent');
-  if (consent){
-    consent.addEventListener("change", ()=>{
-      if (consent.checked) saveForm(); // salva instantaneamente o estado atual
-    });
-  }
-});
-</script>
-<script src="script.js"></script>
+    <script src="script.js"></script>
 </body>
 </html>

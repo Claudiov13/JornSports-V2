@@ -1,0 +1,17 @@
+services:
+  db:
+    image: postgres:13
+    container_name: jorn_sports_db
+    environment:
+      POSTGRES_USER: jornuser
+      POSTGRES_PASSWORD: jornpassword
+      POSTGRES_DB: jornsports
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+   
+      
