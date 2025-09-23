@@ -7,17 +7,17 @@ from pydantic import BaseModel, Field
 from typing import Literal
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.future import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 # Importa as configurações do banco de dados e os modelos de tabela
 import models
-from database import SessionLocal, engine
+from database import engine, SessionLocal
 
-# ==============================================================================
-# SETUP E CONFIGURAÇÃO INICIAL
-# ==============================================================================
+#Funçao lógica agora importada em local diferente para fácil manuntenção
+from services.evaluation import evaluate_athlete
 
-# Cria a tabela no banco de dados (se não existir) ao iniciar a aplicação
-models.Base.metadata.create_all(bind=engine)
+from config import settings
 
 # Carrega as variáveis de ambiente do arquivo .env (ex: GEMINI_API_KEY)
 load_dotenv()
@@ -25,10 +25,26 @@ load_dotenv()
 # Inicia a aplicação FastAPI
 app = FastAPI()
 
+@app.on_event("startup")
+async def on_startup():
+    """
+    Esta função será executada uma vez, quando o servidor FastAPI iniciar.
+    Ela cria as tabelas do banco de dados de forma assíncrona.
+    """
+    print("INFO:     Verificando e criando tabelas do banco de dados...")
+    async with engine.begin() as conn:
+        # A forma correta de rodar a criação de tabelas com um engine assíncrono
+        await conn.run_sync(models.Base.metadata.create_all)
+    print("INFO:     Tabelas do banco de dados prontas.")
+
+# 1. Lemos a string do arquivo de configuração.
+# 2. Usamos .split() para criar a lista de origens.
+origins = settings.ALLOWED_ORIGINS.split()
+
 # Configuração do CORS para permitir a comunicação com o frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Em produção, restrinja para o domínio do seu frontend
+    allow_origins=origins,  # 3. Usamos a lista que acabamos de criar.
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -39,12 +55,9 @@ app.add_middleware(
 # ==============================================================================
 
 # Função que fornece uma sessão do banco de dados para as rotas da API
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db():
+    async with SessionLocal() as session:
+        yield session
 
 # ==============================================================================
 # MODELOS PYDantic (Estrutura de Dados para a API)
@@ -90,88 +103,14 @@ class AthleteData(BaseModel):
     resistencia: str | None = Field(None, max_length=50)
 
 # ==============================================================================
-# LÓGICA DE AVALIAÇÃO DETERMINÍSTICA
-# ==============================================================================
-
-def _clamp01(x: float) -> float:
-    return max(0.0, min(1.0, x))
-
-def _to_0_10_from_interval(x: float | None, best: float, worst: float, invert: bool = False) -> float:
-    if x is None: return 5.0
-    a, b = (best, worst) if not invert else (worst, best)
-    if a == b: return 5.0
-    t = (x - a) / (b - a)
-    t = 1.0 - t if invert else t
-    return 10.0 * _clamp01(t)
-
-def evaluate_athlete(d: dict) -> dict:
-    speed = _to_0_10_from_interval(d.get("velocidade_sprint"), best=2.8, worst=4.5, invert=True)
-    agility = _to_0_10_from_interval(d.get("agilidade"), best=9.0, worst=12.5, invert=True)
-    jump = _to_0_10_from_interval(d.get("salto_vertical"), best=75.0, worst=30.0)
-    endurance = 5.0
-    
-    def S(key): return float(d.get(key, 5.0))
-    
-    try:
-        bmi = d["peso"] / ((d["altura"] / 100.0) ** 2)
-    except (TypeError, ZeroDivisionError):
-        bmi = None
-
-    skill_keys = [
-        "controle_bola", "drible", "passe_curto", "passe_longo", "finalizacao", 
-        "cabeceio", "desarme", "visao_jogo", "compostura", "agressividade"
-    ]
-    
-    feats = { key: S(key) for key in skill_keys }
-    feats['velocidade'] = speed
-    feats['agilidade'] = agility
-    feats['salto'] = jump
-    feats['resistencia'] = endurance
-
-    positions = {
-        "goleiro": {"compostura": 0.30, "salto": 0.25, "visao_jogo": 0.20, "passe_curto": 0.15, "passe_longo": 0.10},
-        "zagueiro": {"desarme": 0.25, "cabeceio": 0.20, "compostura": 0.15, "passe_curto": 0.10, "agressividade": 0.15, "salto": 0.15},
-        "lateral": {"velocidade": 0.25, "drible": 0.15, "passe_longo": 0.10, "desarme": 0.15, "resistencia": 0.20, "agilidade": 0.15},
-        "volante": {"desarme": 0.20, "passe_curto": 0.20, "compostura": 0.15, "visao_jogo": 0.20, "agressividade": 0.10, "resistencia": 0.15},
-        "meia": {"visao_jogo": 0.25, "passe_curto": 0.20, "drible": 0.15, "finalizacao": 0.15, "compostura": 0.15, "passe_longo": 0.10},
-        "ponta": {"velocidade": 0.30, "drible": 0.25, "finalizacao": 0.20, "agilidade": 0.15, "passe_curto": 0.10},
-        "atacante": {"finalizacao": 0.35, "cabeceio": 0.15, "compostura": 0.15, "visao_jogo": 0.10, "agressividade": 0.15, "controle_bola": 0.10}
-    }
-    
-    pos_scores = {}
-    for pos, weights in positions.items():
-        score = sum(w * feats.get(feat, 5.0) for feat, w in weights.items())
-        total_weight = sum(weights.values())
-        pos_scores[pos] = round((score / total_weight) * 10, 1) if total_weight > 0 else 0.0
-    
-    best_position = max(pos_scores, key=pos_scores.get) if pos_scores else "N/A"
-
-    tech_avg = sum(feats[s] for s in skill_keys) / len(skill_keys)
-    phys_avg = sum([speed, agility, jump, endurance]) / 4.0
-    potential = round((0.6 * tech_avg + 0.4 * phys_avg) * 10, 1)
-
-    risk = 0.0
-    notes = []
-    if bmi is not None:
-        if bmi > 25:
-            risk += (bmi - 25) * 1.5
-            if bmi >= 27.5: notes.append("IMC elevado, pode impactar agilidade e resistência.")
-    risk += (10.0 - agility) * 0.4 + S("agressividade") * 0.3
-    injury_score = round(_clamp01(risk / 10.0) * 100.0, 0)
-    label = "baixo"
-    if injury_score >= 67: label = "alto"
-    elif injury_score >= 34: label = "médio"
-
-    return { "best_position": best_position, "position_scores": pos_scores, "potential_score": potential, "injury_risk_score": int(injury_score), "injury_risk_label": label, "bmi": round(bmi, 1) if bmi else None, "notes": notes }
-
-# ==============================================================================
 # ROTAS (ENDPOINTS) DA API
 # ==============================================================================
 
 # --- ROTAS PARA GERENCIAR RELATÓRIOS NO BANCO DE DADOS ---
 
 @app.post("/api/reports", status_code=201)
-def create_report(report_data: ReportCreate, db: Session = Depends(get_db)):
+# Rota agora é 'async def', e a dependência é AsyncSession
+async def create_report(report_data: ReportCreate, db: AsyncSession = Depends(get_db)):
     """ Salva um novo relatório no banco de dados. """
     new_report = models.Report(
         athlete_name=report_data.athleteName,
@@ -179,24 +118,33 @@ def create_report(report_data: ReportCreate, db: Session = Depends(get_db)):
         analysis=report_data.analysis
     )
     db.add(new_report)
-    db.commit()
-    db.refresh(new_report)
+    await db.commit()  # <-- Adicionado await
+    await db.refresh(new_report)  # <-- Adicionado await
     return new_report
 
 @app.get("/api/reports")
-def get_reports(db: Session = Depends(get_db)):
+# Rota agora é 'async def'
+async def get_reports(db: AsyncSession = Depends(get_db)):
     """ Busca todos os relatórios salvos no banco de dados. """
-    reports = db.query(models.Report).order_by(models.Report.date.desc()).all()
+    # Nova sintaxe com 'select' e 'await db.execute'
+    query = select(models.Report).order_by(models.Report.date.desc())
+    result = await db.execute(query)
+    reports = result.scalars().all()
     return reports
 
 @app.delete("/api/reports/{report_id}")
-def delete_report(report_id: int, db: Session = Depends(get_db)):
+# Rota agora é 'async def'
+async def delete_report(report_id: int, db: AsyncSession = Depends(get_db)):
     """ Deleta um relatório específico do banco de dados. """
-    report_to_delete = db.query(models.Report).filter(models.Report.id == report_id).first()
+    # Nova sintaxe para buscar um único item
+    result = await db.get(models.Report, report_id)
+    report_to_delete = result
+    
     if not report_to_delete:
         raise HTTPException(status_code=404, detail="Relatório não encontrado")
-    db.delete(report_to_delete)
-    db.commit()
+    
+    await db.delete(report_to_delete)
+    await db.commit()  # <-- Adicionado await
     return {"detail": "Relatório deletado com sucesso"}
 
 # --- ROTA PARA ANÁLISE COM A IA ---
