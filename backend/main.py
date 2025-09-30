@@ -1,14 +1,24 @@
+import bleach
 import os
-import requests
+import httpx
 import json
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 from typing import Literal
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.future import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import UploadFile, File
+import csv, io
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import insert, select
+import logging
+from models import Base            # <- para usar Base.metadata.create_all no startup
+from database import engine 
 
 # Importa as configurações do banco de dados e os modelos de tabela
 import models
@@ -25,8 +35,25 @@ load_dotenv()
 # Inicia a aplicação FastAPI
 app = FastAPI()
 
+logger = logging.getLogger("uvicorn")
+
+app.mount("/public", StaticFiles(directory="../public"), name="public")
+
+# rota raiz para servir o index.html
+@app.get("/")
+async def read_index():
+    return FileResponse(os.path.join("../public", "index.html"))
+    
 @app.on_event("startup")
 async def on_startup():
+    logger.info("Verificando e criando tabelas do banco de dados...")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    logger.info("Tabelas do banco de dados prontas.")
+    # 👇 LOG ÚTIL: confirma que está em v1 (e não v1beta)
+    logger.info(f"GEMINI_API_URL em uso: {settings.GEMINI_API_URL}")
+    if "/v1beta/" in settings.GEMINI_API_URL:
+        logger.error("GEMINI_API_URL está em v1beta — isso vai dar 404. Corrija o .env para /v1/ ...")
     """
     Esta função será executada uma vez, quando o servidor FastAPI iniciar.
     Ela cria as tabelas do banco de dados de forma assíncrona.
@@ -150,53 +177,223 @@ async def delete_report(report_id: int, db: AsyncSession = Depends(get_db)):
 # --- ROTA PARA ANÁLISE COM A IA ---
 
 @app.post("/api/analyze")
-async def analyze_athlete(dados_atleta: AthleteData, db: Session = Depends(get_db)):
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise HTTPException(status_code=500, detail="Chave da API não encontrada.")
-
-    # 1. Roda a avaliação determinística primeiro
-    eval_dict = evaluate_athlete(dados_atleta.model_dump())
-
-    # 2. Monta o prompt para a IA
-    prompt = f"""
-        Você é um olheiro de futebol profissional e analista de dados. Sua tarefa é analisar o perfil de um atleta, combinando os dados brutos com uma avaliação numérica pré-calculada pelo nosso sistema. Forneça um relatório humano e perspicaz.
-
-        **DADOS BRUTOS DO ATLETA:**
-        - Nome: {dados_atleta.nome} {dados_atleta.sobrenome}, {dados_atleta.idade} anos
-        - Posição Principal: {dados_atleta.posicao_atual}
-        - Físico: {dados_atleta.altura} cm, {dados_atleta.peso} kg
-        - Habilidades (0-10): Controle de Bola ({dados_atleta.controle_bola}), Drible ({dados_atleta.drible}), Passe Curto ({dados_atleta.passe_curto}), Passe Longo ({dados_atleta.passe_longo}), Finalização ({dados_atleta.finalizacao}), Cabeceio ({dados_atleta.cabeceio}), Desarme ({dados_atleta.desarme}), Visão de Jogo ({dados_atleta.visao_jogo}), Compostura ({dados_atleta.compostura}), Agressividade ({dados_atleta.agressividade}).
-
-        **ANÁLISE NUMÉRICA DO SISTEMA:**
-        - Melhor Posição Sugerida (baseado em pesos): **{eval_dict['best_position']}**
-        - Score de Potencial Geral (0-100): {eval_dict['potential_score']}
-        - Risco de Lesão (calculado): {eval_dict['injury_risk_label']} (Score: {eval_dict['injury_risk_score']}/100)
-        - Observações do Sistema: {', '.join(eval_dict['notes']) if eval_dict['notes'] else 'Nenhuma'}
-
-        **SUA TAREFA:**
-        Com base em **TUDO** acima, gere uma resposta **EXCLUSIVAMENTE em formato JSON** com três chaves: "relatorio", "comparacao", e "plano_treino".
-        1.  **relatorio**: Um parágrafo de análise em HTML. Comente sobre os pontos fortes e fracos, e se você concorda com a "Melhor Posição Sugerida" pelo sistema, explicando o porquê.
-        2.  **comparacao**: Um parágrafo em HTML comparando o estilo de jogo a um jogador profissional.
-        3.  **plano_treino**: Uma lista `<ul>` com `<li>` em HTML, com 3 a 5 pontos focais para o atleta evoluir.
+async def analyze_athlete(data: AthleteData, db: AsyncSession = Depends(get_db)):
     """
+    Gera avaliação + relatório via Gemini. (VERSÃO CORRIGIDA)
+    """
+    # 1) Monta prompt (seu código aqui estava perfeito)
+    athlete_dict = data.model_dump()
+    eval_dict = evaluate_athlete(athlete_dict)
+    prompt = f"""
+Você é um olheiro profissional e analista de performance. Analise o atleta combinando os dados brutos e a avaliação numérica do nosso sistema. 
+Responda **exclusivamente** com **um único JSON** no formato:
+{{
+  "relatorio": "<p>...texto curto em HTML...</p>",
+  "comparacao": "<p>...texto curto em HTML...</p>",
+  "plano_treino": "<ul><li>...</li>...</ul>"
+}}
+Se não tiver certeza de algo, **ainda assim** preencha as chaves com um texto curto apropriado. **Não inclua nada fora do JSON** (sem comentários, sem markdown, sem explicações adicionais).
 
-    # AQUI ESTÁ A CORREÇÃO PRINCIPAL:
-    api_url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    
-    payload = {"contents": [{"parts": [{"text": prompt}]}], "generationConfig": {"responseMimeType": "application/json"},}
+DADOS DO ATLETA:
+- Nome: {data.nome} {data.sobrenome}, {data.idade} anos
+- Posição atual: {data.posicao_atual}
+- Físico: {data.altura} cm, {data.peso} kg
+- Habilidades (0-10): Controle de Bola ({data.controle_bola}), Drible ({data.drible}), Passe Curto ({data.passe_curto}), Passe Longo ({data.passe_longo}), Finalização ({data.finalizacao}), Cabeceio ({data.cabeceio}), Desarme ({data.desarme}), Visão de Jogo ({data.visao_jogo}), Compostura ({data.compostura}), Agressividade ({data.agressividade})
+- Pé dominante: {data.pe_dominante}
 
+AVALIAÇÃO NUMÉRICA DO SISTEMA:
+- Melhor posição sugerida: {eval_dict['best_position']}
+- Score de potencial (0-100): {eval_dict['potential_score']}
+- Risco de lesão: {eval_dict['injury_risk_label']} (score {eval_dict['injury_risk_score']}/100)
+- Observações: {', '.join(eval_dict['notes']) if eval_dict['notes'] else 'Nenhuma'}
+
+INSTRUÇÕES DE SAÍDA:
+1) "relatorio": **1 parágrafo curto em HTML** com: pontos fortes 2–3 bullets embutidos (concisos), 1–2 fragilidades e se você **concorda/discorda** da posição sugerida, justificando rapidamente.
+2) "comparacao": **1 parágrafo curto em HTML** dizendo a qual estilo de jogador profissional o atleta mais se aproxima e por quê (foco em 2–3 traços: velocidade, leitura, agressividade, etc.).
+3) "plano_treino": **lista `<ul><li>` com 4–5 itens** equilibrando físico (ex.: força de core, resistência), técnico (ex.: passe longo sob pressão) e tático/mental (ex.: tomada de decisão no terço final). Cada `<li>` comece com um verbo no infinitivo (ex.: “Aprimorar…”, “Aumentar…”).
+
+Lembrete final: devolva **apenas** o JSON pedido acima, sem ``` e sem texto extra.
+""".strip()
+
+    # 2) Chamada HTTP (código que você já tinha corrigido)
+    api_url_com_chave = f"{settings.GEMINI_API_URL}?key={settings.GEMINI_API_KEY}"
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
+    headers = {"Content-Type": "application/json"}
+
+    # 3) Chama o Gemini e trata erros
     try:
-        response = requests.post(api_url, json=payload, timeout=90)
-        response.raise_for_status()
-        ai_analysis_text = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        
-        # 3. Combina a resposta da IA com a avaliação numérica
-        final_response = json.loads(ai_analysis_text)
-        final_response['evaluation'] = eval_dict
-        
-        return final_response
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao chamar a API do Gemini: {e}")
+        async with httpx.AsyncClient(timeout=90) as client:
+            resp = await client.post(api_url_com_chave, json=payload, headers=headers)
+            resp.raise_for_status()  # Lança exceção para erros 4xx/5xx
+    except httpx.HTTPStatusError as e:
+        detail_body = e.response.text[:500]
+        # Este print é crucial para vermos o erro exato no terminal
+        print(f"--> Erro HTTP do Gemini: {e.response.status_code} | Corpo: {detail_body}")
+        raise HTTPException(
+            status_code=502,
+            detail=f"Erro ao chamar a API do Gemini: {e}. Corpo: {detail_body}"
+        )
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=502, detail=f"Erro de rede ao chamar o Gemini: {e}")
+
+    # ================================================================
+    # ✅ INÍCIO DA CORREÇÃO CRÍTICA
+    # ================================================================
+    try:
+        data_ai = resp.json()
+        # O Gemini aninha a resposta dentro de candidates -> content -> parts
+        # Esta é a forma correta e segura de extrair o texto.
+        ai_analysis_text = data_ai["candidates"][0]["content"]["parts"][0]["text"]
     except (KeyError, IndexError, json.JSONDecodeError) as e:
-        raise HTTPException(status_code=500, detail=f"Erro ao processar a resposta da API: {e}")
+        # Se a estrutura da resposta for inesperada, ou não for JSON, o erro cairá aqui.
+        raise HTTPException(
+            status_code=500, 
+            detail=f"Não foi possível extrair o texto da resposta da IA. Erro: {e}. Resposta recebida: {resp.text[:500]}"
+        )
+    # ================================================================
+    # ✅ FIM DA CORREÇÃO CRÍTICA
+    # ================================================================
+
+    # 4) Parse do JSON com fallback (seu código aqui estava perfeito)
+    try:
+        final_response = json.loads(ai_analysis_text)
+    except json.JSONDecodeError:
+        start = ai_analysis_text.find("{")
+        end = ai_analysis_text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            try:
+                final_response = json.loads(ai_analysis_text[start:end+1])
+            except json.JSONDecodeError as e:
+                raise HTTPException(status_code=500, detail=f"Resposta da IA não é JSON válido: {e}")
+        else:
+            raise HTTPException(status_code=500, detail="Resposta da IA não contém JSON.")
+    
+    # 5) Sanitização de HTML (seu código aqui estava perfeito)
+    _allowed_tags = ["p", "ul", "li", "strong", "em", "br", "span"]
+    def _sanitize(html: str | None) -> str:
+        return bleach.clean(html or "", tags=_allowed_tags, attributes={}, strip=True)
+    for k in ("relatorio", "comparacao", "plano_treino"):
+        if k in final_response:
+            final_response[k] = _sanitize(final_response[k])
+
+    # 6) Anexa a avaliação numérica calculada
+    final_response["evaluation"] = eval_dict
+    return final_response
+
+async def _find_or_create_player(db: AsyncSession, first, last, external_id=None):
+    """Tenta achar por external_id (prosoccer) ou por (nome, sobrenome).
+       Se não existir, cria o jogador.
+    """
+    if external_id:
+        q = select(models.Player).where(
+            models.Player.external_ids["prosoccer"].as_string() == external_id
+        )
+        r = await db.execute(q)
+        p = r.scalar_one_or_none()
+        if p:
+            return p
+
+    q = select(models.Player).where(
+        models.Player.first_name == first,
+        models.Player.last_name == last
+    )
+    r = await db.execute(q)
+    p = r.scalar_one_or_none()
+    if p:
+        return p
+
+    p = models.Player(
+        first_name=first,
+        last_name=last,
+        external_ids={"prosoccer": external_id} if external_id else {}
+    )
+    db.add(p)
+    await db.commit()
+    await db.refresh(p)
+    return p
+
+
+def _score_from_window(value, window_values, higher_better=True):
+    """Transforma um valor em score 0..100 baseado em z-score + CDF normal."""
+    import math, statistics
+    if not window_values:
+        return 50.0
+    mu = statistics.mean(window_values)
+    sd = statistics.pstdev(window_values) or 1e-6
+    z = (value - mu) / sd
+    if not higher_better:
+        z = -z
+    pct = 0.5 * (1 + math.erf(z / math.sqrt(2)))
+    return round(100 * pct, 2)
+
+
+async def _process_after_insert(db: AsyncSession, player_id, metric, value, ts, higher_better=True):
+    """Após inserir uma medição: calcula score da janela e gera alertas simples."""
+    since = ts - timedelta(days=14)
+    q = select(models.Measurement.value).where(
+        models.Measurement.player_id == player_id,
+        models.Measurement.metric == metric,
+        models.Measurement.recorded_at >= since
+    ).order_by(models.Measurement.recorded_at)
+    r = await db.execute(q)
+    window = [row[0] for row in r.all()]
+    score = _score_from_window(value, window, higher_better=higher_better)
+
+    # Regras simples de alerta (exemplo)
+    alert = None
+    if metric.upper() == "HRV" and score < 30:
+        alert = models.Alert(
+            player_id=player_id,
+            level="WARNING",
+            metric=metric,
+            message=f"HRV baixo (score {score})",
+            payload={"value": value, "ts": ts.isoformat()}
+        )
+    if metric.upper() == "LDH" and value > 250:
+        alert = models.Alert(
+            player_id=player_id,
+            level="CRITICAL",
+            metric=metric,
+            message=f"LDH elevado ({value})",
+            payload={"ts": ts.isoformat()}
+        )
+
+    if alert:
+        db.add(alert)
+        await db.commit()
+
+    return score
+
+@app.post("/api/ingest/csv")
+async def ingest_csv(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+    """
+    CSV esperado com colunas:
+    first_name,last_name,external_id,metric,value,unit,recorded_at
+    recorded_at em ISO-8601 (ex.: 2025-03-20T10:30:00Z)
+    """
+    raw = await file.read()
+    reader = csv.DictReader(io.StringIO(raw.decode("utf-8")))
+    inserted = 0
+    for row in reader:
+        p = await _find_or_create_player(
+            db,
+            row.get("first_name") or "",
+            row.get("last_name") or "",
+            row.get("external_id") or None
+        )
+        ts = datetime.fromisoformat(row["recorded_at"].replace("Z","+00:00"))
+        m = models.Measurement(
+            player_id=p.id,
+            metric=row["metric"],
+            value=float(row["value"]),
+            unit=row.get("unit") or "",
+            recorded_at=ts,
+            meta={"source":"csv"}
+        )
+        db.add(m)
+        await db.commit(); await db.refresh(m)
+        # pós-processa (score+alerta)
+        await _process_after_insert(db, p.id, row["metric"], float(row["value"]), ts,
+                                    higher_better=(row["metric"].upper() not in {"LDH","CORTISOL","AST","GLICOSE"}))
+        inserted += 1
+    return {"inserted": inserted}

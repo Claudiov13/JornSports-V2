@@ -24,6 +24,11 @@ const elements = {
   evalPositions: document.getElementById('eval-positions-content'),
 };
 
+// --- Sanitizador de HTML (defesa contra XSS) ---
+function safeHtml(html) {
+  return DOMPurify.sanitize(String(html || ""));
+}
+
 // Acessibilidade: permite dar foco programático no container de erro
 if (elements.errorContainer) {
   elements.errorContainer.setAttribute('tabindex', '-1');
@@ -158,9 +163,9 @@ document.querySelectorAll('.skill-slider').forEach(slider => {
 function displayAnalysis(dadosAtleta, analysis) {
   const nomeCompleto = `${dadosAtleta.nome} ${dadosAtleta.sobrenome}`;
   elements.reportTitle.innerText = `Relatório de Análise para ${nomeCompleto.toUpperCase()}`;
-  elements.iaAnalysisDiv.innerHTML = analysis.relatorio;
-  elements.playerComparisonDiv.innerHTML = analysis.comparacao;
-  elements.trainingPlanDiv.innerHTML = analysis.plano_treino;
+  elements.iaAnalysisDiv.innerHTML = safeHtml(analysis.relatorio);
+  elements.playerComparisonDiv.innerHTML = safeHtml(analysis.comparacao);
+  elements.trainingPlanDiv.innerHTML = safeHtml(analysis.plano_treino);
 
   // 1) Mostra o container primeiro
   elements.loadingDiv.classList.add('hidden');
@@ -179,15 +184,38 @@ requestAnimationFrame(() => {
 
 }
 
-    function displayError(error) {
-        elements.loadingDiv.classList.add('hidden');
-        elements.resultsContent.classList.remove('hidden');
-        elements.reportTitle.innerText = 'Erro na Análise';
-        elements.iaAnalysisDiv.innerHTML = `<p class="text-red-400">Não foi possível gerar a análise. Detalhe: ${error.message}</p>`;
-        elements.playerComparisonDiv.innerHTML = '';
-        elements.trainingPlanDiv.innerHTML = '';
-        if(skillChart) skillChart.destroy();
+function displayError(error) {
+    elements.loadingDiv.classList.add('hidden');
+    elements.resultsContent.classList.remove('hidden');
+    elements.reportTitle.innerText = 'Erro na Análise';
+
+    // ✅ CÓDIGO MELHORADO PARA EXIBIR ERROS DETALHADOS
+    let errorMessage = error.message;
+    // Se a mensagem de erro contém um corpo JSON, formata para ser legível
+    if (errorMessage.includes('Corpo:')) {
+        try {
+            // Tenta extrair e formatar o JSON do erro
+            const jsonPart = errorMessage.substring(errorMessage.indexOf('{'));
+            const errorObj = JSON.parse(jsonPart);
+            // Formata o JSON para exibição com <pre> para manter a indentação
+            errorMessage = `<pre class="text-left text-sm whitespace-pre-wrap">${JSON.stringify(errorObj, null, 2)}</pre>`;
+        } catch (e) {
+            // Se falhar, apenas exibe a mensagem original
+            errorMessage = `<p class="text-red-400">${safeHtml(errorMessage)}</p>`;
+        }
+    } else {
+        errorMessage = `<p class="text-red-400">${safeHtml(errorMessage)}</p>`;
     }
+
+    elements.iaAnalysisDiv.innerHTML = `
+        <p class="text-red-400 font-bold mb-2">Não foi possível gerar a análise. Detalhes:</p>
+        ${errorMessage}
+    `;
+    
+    elements.playerComparisonDiv.innerHTML = '';
+    elements.trainingPlanDiv.innerHTML = '';
+    if(skillChart) skillChart.destroy();
+}
 
     // Campos de habilidades usados no gráfico
 const SKILL_FIELDS = [

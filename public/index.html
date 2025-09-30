@@ -3,12 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Jorn Sports Analytics - Futebol</title>
-    <link rel="stylesheet" href="style.css">
     <script src="https://cdn.tailwindcss.com"></script>
+    <title>Jorn Sports Analytics - Futebol</title>
+    <link rel="stylesheet" href="/public/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
     <!-- Chart.js para os gráficos -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+     <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
+     <script src="/public/script.js"></script>
+
+
 </head>
 <body class="bg-gray-900 text-white font-sans">
 
@@ -81,7 +85,7 @@
                         <!-- Posição Principal (abaixo) -->
                         <div class="mb-4">
                             <label for="posicao_atual" class="block text-base font-medium text-gray-300 mb-1">Posição Principal</label>
-                            <select id="posicao_atual" class="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-base md:text-lg leading-relaxed focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
+                            <select id="posicao_atual" required class="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-base md:text-lg leading-relaxed focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
                                 <option value="default" selected disabled>Selecione</option>
                                 <option value="goleiro">Goleiro</option>
                                 <option value="zagueiro">Zagueiro</option>
@@ -95,7 +99,7 @@
                         
                         <div class="mb-4">
                             <label for="pe_dominante" class="block text-base font-medium text-gray-300 mb-1">Pé Dominante</label>
-                            <select id="pe_dominante" class="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-base md:text-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
+                            <select id="pe_dominante" required class="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-base md:text-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
                                 <option value="default" selected disabled>Selecione</option>
                                 <option value="direito">Direito</option>
                                 <option value="esquerdo">Esquerdo</option>
@@ -348,7 +352,7 @@
                 <!-- Comparação e Plano de Treino -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-gray-700 p-4 rounded-lg">
-                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Jogador Comparável</h3>
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Comparativos e Insights</h3>
                         <div id="player-comparison"></div>
                     </div>
                     <div class="bg-gray-700 p-4 rounded-lg">
@@ -377,6 +381,6 @@
 
     </div>
 
-    <script src="script.js"></script>
+  
 </body>
 </html>
