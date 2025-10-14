@@ -2,19 +2,21 @@ import bleach
 import os
 import httpx
 import json
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from sqlalchemy.orm import Session
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 from typing import Literal
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import UploadFile, File
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import csv, io
 from datetime import datetime, timezone, timedelta
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 from sqlalchemy import insert, select
 import logging
 from models import Base            # <- para usar Base.metadata.create_all no startup
@@ -85,6 +87,83 @@ app.add_middleware(
 async def get_db():
     async with SessionLocal() as session:
         yield session
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+bearer_scheme = HTTPBearer(auto_error=False)
+ACCESS_TOKEN_EXPIRE_HOURS = 8
+
+
+def get_password_hash(password: str) -> str:
+    return pwd_context.hash(password)
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except ValueError:
+        return False
+
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    to_encode = data.copy()
+    expire_delta = expires_delta or timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    expire = datetime.now(timezone.utc) + expire_delta
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, settings.JWT_SECRET, algorithm=settings.JWT_ALG)
+
+
+async def get_user_by_email(db: AsyncSession, email: str):
+    normalized_email = email.lower()
+    result = await db.execute(select(models.User).where(models.User.email == normalized_email))
+    return result.scalar_one_or_none()
+
+
+async def authenticate_user(db: AsyncSession, email: str, password: str):
+    user = await get_user_by_email(db, email)
+    if not user:
+        return None
+    if not verify_password(password, user.password_hash):
+        return None
+    return user
+
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+):
+    if not credentials or credentials.scheme.lower() != "bearer":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    token = credentials.credentials
+    try:
+        payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALG])
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    email = payload.get("sub")
+    if not email:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token payload",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    user = await get_user_by_email(db, email)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User no longer exists",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    return user
 
 # ==============================================================================
 # MODELOS PYDantic (Estrutura de Dados para a API)
@@ -95,6 +174,20 @@ class ReportCreate(BaseModel):
     athleteName: str
     dados: dict
     analysis: dict
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=8, max_length=128)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
 
 # Modelo para receber os dados do formulário para a análise da IA
 class AthleteData(BaseModel):
@@ -137,7 +230,11 @@ class AthleteData(BaseModel):
 
 @app.post("/api/reports", status_code=201)
 # Rota agora é 'async def', e a dependência é AsyncSession
-async def create_report(report_data: ReportCreate, db: AsyncSession = Depends(get_db)):
+async def create_report(
+    report_data: ReportCreate,
+    _current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """ Salva um novo relatório no banco de dados. """
     new_report = models.Report(
         athlete_name=report_data.athleteName,
@@ -149,9 +246,66 @@ async def create_report(report_data: ReportCreate, db: AsyncSession = Depends(ge
     await db.refresh(new_report)  # <-- Adicionado await
     return new_report
 
+
+
+@app.post("/auth/register", status_code=status.HTTP_201_CREATED)
+async def register_coach(payload: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    email = payload.email.lower()
+    existing_user = await get_user_by_email(db, email)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Email already registered",
+        )
+
+    user = models.User(
+        email=email,
+        password_hash=get_password_hash(payload.password),
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "role": user.role,
+        "created_at": user.created_at,
+    }
+
+
+@app.post("/auth/login", response_model=TokenResponse)
+async def login(payload: LoginRequest, db: AsyncSession = Depends(get_db)):
+    user = await authenticate_user(db, payload.email.lower(), payload.password)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    expires_delta = timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS)
+    token = create_access_token({"sub": user.email, "role": user.role}, expires_delta)
+    return TokenResponse(
+        access_token=token,
+        expires_in=int(expires_delta.total_seconds()),
+    )
+
+
+@app.get("/api/me")
+async def read_me(current_user: models.User = Depends(get_current_user)):
+    return {
+        "id": str(current_user.id),
+        "email": current_user.email,
+        "role": current_user.role,
+        "created_at": current_user.created_at,
+    }
+
 @app.get("/api/reports")
 # Rota agora é 'async def'
-async def get_reports(db: AsyncSession = Depends(get_db)):
+async def get_reports(
+    _current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """ Busca todos os relatórios salvos no banco de dados. """
     # Nova sintaxe com 'select' e 'await db.execute'
     query = select(models.Report).order_by(models.Report.date.desc())
@@ -161,7 +315,11 @@ async def get_reports(db: AsyncSession = Depends(get_db)):
 
 @app.delete("/api/reports/{report_id}")
 # Rota agora é 'async def'
-async def delete_report(report_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_report(
+    report_id: int,
+    _current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """ Deleta um relatório específico do banco de dados. """
     # Nova sintaxe para buscar um único item
     result = await db.get(models.Report, report_id)
@@ -177,7 +335,11 @@ async def delete_report(report_id: int, db: AsyncSession = Depends(get_db)):
 # --- ROTA PARA ANÁLISE COM A IA ---
 
 @app.post("/api/analyze")
-async def analyze_athlete(data: AthleteData, db: AsyncSession = Depends(get_db)):
+async def analyze_athlete(
+    data: AthleteData,
+    _current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
     Gera avaliação + relatório via Gemini. (VERSÃO CORRIGIDA)
     """
@@ -397,3 +559,5 @@ async def ingest_csv(file: UploadFile = File(...), db: AsyncSession = Depends(ge
                                     higher_better=(row["metric"].upper() not in {"LDH","CORTISOL","AST","GLICOSE"}))
         inserted += 1
     return {"inserted": inserted}
+
+

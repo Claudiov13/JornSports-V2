@@ -7,7 +7,7 @@
     <title>Jorn Sports Analytics - Futebol</title>
     <link rel="stylesheet" href="/public/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
-    <!-- Chart.js para os gráficos -->
+    <!-- Chart.js para os graficos -->
      <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
      <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
      <script src="/public/script.js"></script>
@@ -16,15 +16,15 @@
 </head>
 <body class="bg-gray-900 text-white font-sans">
 
-    <!-- Modal de Relatórios Salvos -->
+    <!-- Modal de Relatorios Salvos -->
     <div id="reports-modal" class="hidden fixed inset-0 bg-black bg-opacity-75 z-50 flex items-center justify-center p-4">
         <div class="bg-gray-800 rounded-lg shadow-xl w-full md:w-3/4 lg:w-2/3 max-h-[90vh] flex flex-col">
             <div class="p-4 border-b border-gray-700 flex justify-between items-center">
-                <h2 class="text-2xl font-bold text-orange-400">Relatórios Salvos</h2>
+                <h2 class="text-2xl font-bold text-orange-400">Relatorios Salvos</h2>
                 <button id="close-modal-btn" class="text-gray-400 hover:text-white text-4xl leading-none">&times;</button>
             </div>
             <div class="p-6 overflow-y-auto flex-grow" id="reports-list-container">
-                <!-- A lista de relatórios será inserida aqui -->
+                <!-- A lista de relatorios sera inserida aqui -->
             </div>
         </div>
     </div>
@@ -35,12 +35,34 @@
              <div class="flex justify-center items-center mb-4">
                 <h1 class="text-4xl md:text-5xl font-bold text-orange-500 tracking-wider">JORN SPORTS</h1>
             </div>
-            <p class="text-gray-400 text-lg">Análise de Potencial e Desempenho para Atletas de Futebol</p>
+            <p class="text-gray-400 text-lg">Analise de Potencial e Desempenho para Atletas de Futebol</p>
         </header>
         
+        <section id="auth-section" class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 mb-8">
+            <h2 class="text-2xl font-semibold text-orange-400 mb-4">Acesso do Tecnico</h2>
+            <form id="login-form" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label for="login-email" class="block text-sm font-medium text-gray-300 mb-1">E-mail</label>
+                        <input type="email" id="login-email" name="email" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="tecnico@clube.com" autocomplete="email" required>
+                    </div>
+                    <div>
+                        <label for="login-password" class="block text-sm font-medium text-gray-300 mb-1">Senha</label>
+                        <input type="password" id="login-password" name="password" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="*******" autocomplete="current-password" required>
+                    </div>
+                </div>
+                <button type="submit" class="bg-orange-500 hover:bg-orange-600 text-white font-semibold py-2 px-4 rounded-lg transition">Entrar</button>
+            </form>
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3 mt-4">
+                <p id="auth-status" class="hidden text-sm text-gray-300" aria-live="polite"></p>
+                <button type="button" id="logout-btn" class="hidden bg-gray-700 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded-lg transition">Sair</button>
+            </div>
+        </section>
+
+        <div id="protected-content" class="hidden">
         <div class="text-center mb-8">
             <button id="view-reports-btn" class="bg-gray-700 hover:bg-gray-600 text-orange-400 font-bold py-2 px-6 rounded-lg transition">
-                Ver Relatórios Salvos
+                Ver Relatorios Salvos
             </button>
         </div>
 
@@ -53,13 +75,13 @@
   aria-labelledby="error-title"
   tabindex="-1"
   class="hidden bg-red-900 border border-red-500 text-red-300 px-4 py-3 rounded-lg mb-6">
-  <strong id="error-title" class="font-bold">Dados Incompletos ou Inválidos!</strong>
+  <strong id="error-title" class="font-bold">Dados Incompletos ou Invalidos!</strong>
   <ul id="error-list" class="mt-2 list-disc list-inside"></ul>
 </div>
 
         <main id="form-container" class="space-y-8">
 
-            <!-- Seção de Informações Básicas -->
+            <!-- Secao de Informacoes Basicas -->
             <section class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
                 <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">1. Perfil do Atleta</h2>
 
@@ -82,9 +104,9 @@
                             </div>
                         </div>
 
-                        <!-- Posição Principal (abaixo) -->
+                        <!-- Posicao Principal (abaixo) -->
                         <div class="mb-4">
-                            <label for="posicao_atual" class="block text-base font-medium text-gray-300 mb-1">Posição Principal</label>
+                            <label for="posicao_atual" class="block text-base font-medium text-gray-300 mb-1">Posicao Principal</label>
                             <select id="posicao_atual" required class="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-base md:text-lg leading-relaxed focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
                                 <option value="default" selected disabled>Selecione</option>
                                 <option value="goleiro">Goleiro</option>
@@ -98,7 +120,7 @@
                         </div>
                         
                         <div class="mb-4">
-                            <label for="pe_dominante" class="block text-base font-medium text-gray-300 mb-1">Pé Dominante</label>
+                            <label for="pe_dominante" class="block text-base font-medium text-gray-300 mb-1">Pe Dominante</label>
                             <select id="pe_dominante" required class="w-full bg-gray-700 border border-gray-600 rounded-md p-3 text-base md:text-lg focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none">
                                 <option value="default" selected disabled>Selecione</option>
                                 <option value="direito">Direito</option>
@@ -129,7 +151,7 @@
                                 <rect x="250" y="60" width="30" height="80" fill="none" stroke="#f97316" stroke-width="2"/>
                                 <rect x="20" y="60" width="30" height="80" fill="none" stroke="#f97316" stroke-width="2"/>
 
-                                <!-- Heatmap ellipses (invisíveis por padrão via opacity) -->
+                                <!-- Heatmap ellipses (invisiveis por padrao via opacity) -->
                                 <ellipse id="heat-goleiro"    class="heatmap" cx="40"  cy="100" rx="40" ry="60" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
                                 <ellipse id="heat-zagueiro"   class="heatmap" cx="90"  cy="100" rx="60" ry="70" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
                                 <ellipse id="heat-lateral"    class="heatmap" cx="70"  cy="100" rx="30" ry="80" fill="url(#heatGradient)" style="opacity:0; transition:opacity .35s ease;"/>
@@ -144,9 +166,9 @@
             </section>
 
             <script>
-                // Protege script antigo (se o avatar foi removido) e inicializa heatmap por seleção
+                // Protege script antigo (se o avatar foi removido) e inicializa heatmap por selecao
                 (function(){
-                    // evita erros caso avatar-initials não exista
+                    // evita erros caso avatar-initials nao exista
                     const nome = document.getElementById('nome');
                     const sobrenome = document.getElementById('sobrenome');
                     const initialsEl = document.getElementById('avatar-initials');
@@ -162,7 +184,7 @@
                     updateInitials();
                 })();
 
-                // Heatmap logic: mostra o heatmap correspondente à posição selecionada
+                // Heatmap logic: mostra o heatmap correspondente a posicao selecionada
                 (function(){
                     const mapping = {
                         'goleiro':    'heat-goleiro',
@@ -174,7 +196,7 @@
                         'atacante':   'heat-atacante'
                     };
 
-                    // pré-cache dos elementos e configura transição
+                    // pre-cache dos elementos e configura transicao
                     const heatElements = {};
                     Object.values(mapping).forEach(id => {
                         const el = document.getElementById(id);
@@ -196,7 +218,7 @@
                         if(!id) return;
                         const el = heatElements[id];
                         if(el){
-                            // garante repaint antes de aplicar opacity para transição
+                            // garante repaint antes de aplicar opacity para transicao
                             requestAnimationFrame(() => {
                                 el.style.opacity = 0.92;
                             });
@@ -210,16 +232,16 @@
                         showHeatmapFor(e.target.value);
                     });
 
-                    // Se já houver valor selecionado (ex.: edição), mostra ao carregar
+                    // Se ja houver valor selecionado (ex.: edicao), mostra ao carregar
                     if(select.value && select.value !== 'default'){
                         showHeatmapFor(select.value);
                     }
                 })();
             </script>
 
-            <!-- Seção Antropométrica -->
+            <!-- Secao Antropometrica -->
             <section class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">2. Dados Antropométricos</h2>
+                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">2. Dados Antropometricos</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div>
                         <label for="altura" class="block text-sm font-medium text-gray-300 mb-1">Altura (cm) <span class="text-red-500">*</span></label>
@@ -240,9 +262,9 @@
                 </div>
             </section>
 
-            <!-- Seção de Capacidades Físicas -->
+            <!-- Secao de Capacidades Fisicas -->
             <section class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">3. Capacidades Físicas</h2>
+                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">3. Capacidades Fisicas</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     <div>
                         <label for="velocidade_sprint" class="block text-sm font-medium text-gray-300 mb-1">Velocidade (Sprint 20m) (Opcional)</label>
@@ -257,15 +279,15 @@
                         <input type="number" id="agilidade" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Segundos">
                     </div>
                     <div>
-                        <label for="resistencia" class="block text-sm font-medium text-gray-300 mb-1">Resistência (Yo-Yo Test) (Opcional)</label>
-                        <input type="text" id="resistencia" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Nível/Distância">
+                        <label for="resistencia" class="block text-sm font-medium text-gray-300 mb-1">Resistencia (Yo-Yo Test) (Opcional)</label>
+                        <input type="text" id="resistencia" class="w-full bg-gray-700 border border-gray-600 rounded-md p-2 focus:ring-2 focus:ring-orange-500 focus:border-orange-500 outline-none" placeholder="Nivel/Distancia">
                     </div>
                 </div>
             </section>
 
-            <!-- Seção de Habilidades Técnicas -->
+            <!-- Secao de Habilidades Tecnicas -->
             <section class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700">
-                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">4. Habilidades Técnicas</h2>
+                <h2 class="text-2xl font-semibold mb-6 text-orange-400 border-b-2 border-orange-500 pb-2">4. Habilidades Tecnicas</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
                     <!-- Slider Item -->
                     <div class="slider-container">
@@ -289,8 +311,8 @@
                     </div>
                     <!-- Slider Item -->
                     <div class="slider-container">
-                        <label for="finalizacao" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Finalização</span><span id="finalizacao_value" class="font-bold text-orange-400">5</span></label>
-                        <input type="range" id="finalizacao" name="Finalização" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                        <label for="finalizacao" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Finalizacao</span><span id="finalizacao_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="finalizacao" name="Finalizacao" min="0" max="10" step="1" value="5" class="w-full skill-slider">
                     </div>
                     <!-- Slider Item -->
                     <div class="slider-container">
@@ -304,8 +326,8 @@
                     </div>
                     <!-- Slider Item -->
                     <div class="slider-container">
-                        <label for="visao_jogo" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Visão de Jogo</span><span id="visao_jogo_value" class="font-bold text-orange-400">5</span></label>
-                        <input type="range" id="visao_jogo" name="Visão de Jogo" min="0" max="10" step="1" value="5" class="w-full skill-slider">
+                        <label for="visao_jogo" class="flex justify-between text-sm font-medium text-gray-300 mb-1"><span>Visao de Jogo</span><span id="visao_jogo_value" class="font-bold text-orange-400">5</span></label>
+                        <input type="range" id="visao_jogo" name="Visao de Jogo" min="0" max="10" step="1" value="5" class="w-full skill-slider">
                     </div>
                     <!-- Slider Item -->
                     <div class="slider-container">
@@ -322,13 +344,13 @@
 
             <div class="flex justify-center mt-10">
                 <button id="analisarBtn" class="bg-orange-600 hover:bg-orange-700 text-white font-bold py-3 px-8 rounded-lg text-lg transition-transform transform hover:scale-105 shadow-lg">
-                    ✨ Gerar Análise com IA
+                     Gerar Analise com IA
                 </button>
             </div>
 
         </main>
 
-        <!-- Área de Resultados -->
+        <!-- Area de Resultados -->
         <div id="results" class="hidden mt-12">
             <div id="loading" class="hidden text-center">
                 <p class="text-lg text-orange-400">Analisando dados com a IA do Gemini...</p>
@@ -337,19 +359,19 @@
             <div id="results-content" class="hidden bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 space-y-6">
                 <h2 class="text-3xl font-bold text-center mb-4 text-orange-400" id="report-title"></h2>
                 
-                <!-- Gráfico e Análise -->
+                <!-- Grafico e Analise -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-gray-700 p-4 rounded-lg chart-container">
-                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Visualização de Habilidades</h3>
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Visualizacao de Habilidades</h3>
                         <canvas id="skillChart"></canvas>
                     </div>
                     <div class="bg-gray-700 p-4 rounded-lg">
-                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Relatório da IA</h3>
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Relatorio da IA</h3>
                         <div id="ia-analysis"></div>
                     </div>
                 </div>
 
-                <!-- Comparação e Plano de Treino -->
+                <!-- Comparacao e Plano de Treino -->
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-gray-700 p-4 rounded-lg">
                         <h3 class="text-xl font-semibold text-orange-500 mb-3">Comparativos e Insights</h3>
@@ -363,11 +385,11 @@
 
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <div class="bg-gray-700 p-4 rounded-lg">
-                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Análise Quantitativa</h3>
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Analise Quantitativa</h3>
                         <div id="eval-summary-content"></div>
                     </div>
                     <div class="bg-gray-700 p-4 rounded-lg">
-                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Scores por Posição</h3>
+                        <h3 class="text-xl font-semibold text-orange-500 mb-3">Scores por Posicao</h3>
                         <div id="eval-positions-content"></div>
                     </div>
                 </div>
@@ -377,6 +399,8 @@
 
             </div>
             
+        </div>
+
         </div>
 
     </div>

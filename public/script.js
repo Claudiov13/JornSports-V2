@@ -17,34 +17,244 @@ const elements = {
   closeModalBtn: document.getElementById('close-modal-btn'),
   reportsListContainer: document.getElementById('reports-list-container'),
   idadeInput: document.getElementById('idade'),
-  playerAvatar: document.getElementById('player-avatar'), // só funciona se existir no HTML
+  playerAvatar: document.getElementById('player-avatar'), // so funciona se existir no HTML
   posicaoSelect: document.getElementById('posicao_atual'),
   heatmaps: document.querySelectorAll('#tactical-map .heatmap'),
   evalSummary: document.getElementById('eval-summary-content'),
   evalPositions: document.getElementById('eval-positions-content'),
+  formContainer: document.getElementById('form-container'),
+  protectedContent: document.getElementById('protected-content'),
+  loginForm: document.getElementById('login-form'),
+  loginEmail: document.getElementById('login-email'),
+  loginPassword: document.getElementById('login-password'),
+  logoutBtn: document.getElementById('logout-btn'),
+  authStatus: document.getElementById('auth-status'),
 };
+
+const API_BASE_URL = 'http://127.0.0.1:8000';
+const TOKEN_STORAGE_KEY = 'jornAuthToken';
+const TOKEN_EXPIRY_KEY = 'jornAuthTokenExpiry';
+let currentUserEmail = '';
+
+function clearAuthData() {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(TOKEN_EXPIRY_KEY);
+  currentUserEmail = '';
+}
+
+function storeToken(token, expiresIn) {
+  localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  if (typeof expiresIn === 'number' && Number.isFinite(expiresIn)) {
+    const expiresAt = Date.now() + expiresIn * 1000;
+    localStorage.setItem(TOKEN_EXPIRY_KEY, String(expiresAt));
+  } else {
+    localStorage.removeItem(TOKEN_EXPIRY_KEY);
+  }
+}
+
+function getStoredToken() {
+  const token = localStorage.getItem(TOKEN_STORAGE_KEY);
+  if (!token) {
+    return null;
+  }
+  const rawExpiry = localStorage.getItem(TOKEN_EXPIRY_KEY);
+  if (rawExpiry) {
+    const expiresAt = Number(rawExpiry);
+    if (!Number.isFinite(expiresAt) || Date.now() >= expiresAt) {
+      clearAuthData();
+      return null;
+    }
+  }
+  return token;
+}
+
+function setAuthStatus(message, isError = false) {
+  if (!elements.authStatus) {
+    return;
+  }
+  const el = elements.authStatus;
+  if (!message) {
+    el.textContent = '';
+    el.classList.add('hidden');
+    el.classList.remove('text-red-400', 'text-green-400');
+    return;
+  }
+  el.textContent = message;
+  el.classList.remove('hidden');
+  el.classList.toggle('text-red-400', Boolean(isError));
+  el.classList.toggle('text-green-400', !isError);
+}
+
+function updateAuthUI() {
+  const token = getStoredToken();
+  const loggedIn = Boolean(token);
+  if (elements.loginForm) {
+    elements.loginForm.classList.toggle('hidden', loggedIn);
+  }
+  if (elements.logoutBtn) {
+    elements.logoutBtn.classList.toggle('hidden', !loggedIn);
+  }
+  if (elements.protectedContent) {
+    elements.protectedContent.classList.toggle('hidden', !loggedIn);
+  }
+  if (elements.analisarBtn) {
+    elements.analisarBtn.disabled = !loggedIn;
+    elements.analisarBtn.classList.toggle('opacity-50', !loggedIn);
+    elements.analisarBtn.classList.toggle('cursor-not-allowed', !loggedIn);
+  }
+  if (elements.viewReportsBtn) {
+    elements.viewReportsBtn.disabled = !loggedIn;
+    elements.viewReportsBtn.classList.toggle('opacity-50', !loggedIn);
+    elements.viewReportsBtn.classList.toggle('cursor-not-allowed', !loggedIn);
+  }
+}
+
+function handleUnauthorized(message = 'Sessao expirada. Faca login novamente.') {
+  clearAuthData();
+  updateAuthUI();
+  setAuthStatus(message, true);
+  if (elements.loginEmail) {
+    elements.loginEmail.focus();
+  }
+}
+
+function ensureAuthenticated() {
+  const token = getStoredToken();
+  if (!token) {
+    handleUnauthorized('Faca login para continuar.');
+    return false;
+  }
+  return true;
+}
+
+async function authorizedFetch(url, options = {}) {
+  const token = getStoredToken();
+  if (!token) {
+    handleUnauthorized('Faca login para continuar.');
+    throw new Error('NOT_AUTHENTICATED');
+  }
+  const finalOptions = { ...options };
+  const headers = new Headers(finalOptions.headers || {});
+  headers.set('Authorization', `Bearer ${token}`);
+  finalOptions.headers = headers;
+  const response = await fetch(url, finalOptions);
+  if (response.status === 401) {
+    handleUnauthorized();
+    throw new Error('Unauthorized');
+  }
+  return response;
+}
+
+async function loadCurrentUser() {
+  try {
+    const response = await authorizedFetch(`${API_BASE_URL}/api/me`);
+    if (!response.ok) {
+      throw new Error('Falha ao consultar dados do usuario.');
+    }
+    const data = await response.json();
+    currentUserEmail = data.email || '';
+    setAuthStatus(`Autenticado como ${currentUserEmail}`, false);
+  } catch (error) {
+    if (error.message === 'NOT_AUTHENTICATED') {
+      return;
+    }
+    console.error('Erro ao carregar usuario atual:', error);
+    handleUnauthorized();
+  }
+}
+
+async function handleLogin(event) {
+  event.preventDefault();
+  if (!elements.loginEmail || !elements.loginPassword) {
+    return;
+  }
+  const email = elements.loginEmail.value.trim();
+  const password = elements.loginPassword.value;
+  if (!email || !password) {
+    setAuthStatus('Informe email e senha.', true);
+    return;
+  }
+  try {
+    const response = await fetch(`${API_BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    if (!response.ok) {
+      let message = 'Nao foi possivel autenticar.';
+      try {
+        const detail = await response.json();
+        if (detail && detail.detail) {
+          message = detail.detail;
+        }
+      } catch (readError) {
+        // ignore json parse errors
+      }
+      setAuthStatus(message, true);
+      return;
+    }
+    const data = await response.json();
+    storeToken(data.access_token, data.expires_in);
+    elements.loginPassword.value = '';
+    updateAuthUI();
+    await loadCurrentUser();
+  } catch (error) {
+    console.error('Erro de rede ao autenticar:', error);
+    setAuthStatus('Erro de rede ao autenticar.', true);
+  }
+}
+
+function logout() {
+  clearAuthData();
+  updateAuthUI();
+  setAuthStatus('Sessao encerrada.', false);
+}
+
+function initializeAuth() {
+  updateAuthUI();
+  const token = getStoredToken();
+  if (token) {
+    loadCurrentUser();
+  } else {
+    setAuthStatus('', false);
+  }
+}
 
 // --- Sanitizador de HTML (defesa contra XSS) ---
 function safeHtml(html) {
   return DOMPurify.sanitize(String(html || ""));
 }
 
-// Acessibilidade: permite dar foco programático no container de erro
+// Acessibilidade: permite dar foco programatico no container de erro
 if (elements.errorContainer) {
   elements.errorContainer.setAttribute('tabindex', '-1');
 }
 
-// Marca campos "tocados" ao sair do foco (útil para estilos :invalid + classe)
-document.querySelectorAll('input, select, textarea').forEach(el => {
+// Marca campos "tocados" ao sair do foco (util para estilos :invalid + classe)
+const blurScope = elements.formContainer || document;
+blurScope.querySelectorAll('input, select, textarea').forEach(el => {
   el.addEventListener('blur', () => el.classList.add('user-touched'));
 });
 
-let skillChart = null; // Variável para armazenar a instância do gráfico
+let skillChart = null; // Variavel para armazenar a instancia do grafico
 
     // --- EVENT LISTENERS ---
     elements.analisarBtn.addEventListener('click', analisarPerfil);
     elements.viewReportsBtn.addEventListener('click', showReportsModal);
     elements.closeModalBtn.addEventListener('click', () => elements.reportsModal.classList.add('hidden'));
+
+    if (elements.loginForm) {
+      elements.loginForm.addEventListener('submit', handleLogin);
+    }
+
+    if (elements.logoutBtn) {
+      elements.logoutBtn.addEventListener('click', event => {
+        event.preventDefault();
+        logout();
+      });
+    }
+
+    initializeAuth();
 
    let rafId = 0;
 document.querySelectorAll('.skill-slider').forEach(slider => {
@@ -57,31 +267,31 @@ document.querySelectorAll('.skill-slider').forEach(slider => {
     valueSpan.textContent = slider.value;
     cancelAnimationFrame(rafId);
     rafId = requestAnimationFrame(() => {
-      renderSkillChart(); // lê direto do DOM
+      renderSkillChart(); // le direto do DOM
     });
   });
 });
 
-    // --- FUNÇÕES DE VALIDAÇÃO E LÓGICA PRINCIPAL ---
+    // --- FUNCOES DE VALIDACAO E LOGICA PRINCIPAL ---
   function validateForm() {
   const errors = [];
   elements.errorList.innerHTML = '';
 
-  const requiredFields = document.querySelectorAll('[required]');
+  const requiredFields = elements.formContainer ? elements.formContainer.querySelectorAll('[required]') : document.querySelectorAll('[required]');
   requiredFields.forEach(field => {
     if (!String(field.value || '').trim()) {
-      errors.push(`O campo "${field.name}" é obrigatório.`);
+      errors.push(`O campo "${field.name}" e obrigatorio.`);
     }
   });
 
   const nomeField = document.getElementById('nome');
   if (nomeField && nomeField.value && !/^[a-zA-Z\s]+$/.test(nomeField.value)) {
-    errors.push('O campo "Nome" deve conter apenas letras e espaços.');
+    errors.push('O campo "Nome" deve conter apenas letras e espacos.');
   }
   
   const sobrenomeField = document.getElementById('sobrenome');
   if (sobrenomeField && sobrenomeField.value && !/^[a-zA-Z\s]+$/.test(sobrenomeField.value)) {
-    errors.push('O campo "Sobrenome" deve conter apenas letras e espaços.');
+    errors.push('O campo "Sobrenome" deve conter apenas letras e espacos.');
   }
 
   if (errors.length > 0) {
@@ -92,7 +302,7 @@ document.querySelectorAll('.skill-slider').forEach(slider => {
     });
     elements.errorContainer.classList.remove('hidden');
     elements.errorContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    // dá o foco DEPOIS do scroll terminar
+    // da o foco DEPOIS do scroll terminar
     requestAnimationFrame(() => elements.errorContainer && elements.errorContainer.focus({ preventScroll: true }));
     return false;
   }
@@ -102,6 +312,7 @@ document.querySelectorAll('.skill-slider').forEach(slider => {
 }
 
     async function analisarPerfil() {
+        if (!ensureAuthenticated()) return;
         if (!validateForm()) return;
 
         const dadosAtleta = getFormData();
@@ -117,11 +328,11 @@ document.querySelectorAll('.skill-slider').forEach(slider => {
         }
     }
 
-    // --- FUNÇÕES DE MANIPULAÇÃO DO DOM E DADOS ---
+    // --- FUNCOES DE MANIPULACAO DO DOM E DADOS ---
  function getFormData() {
     const data = {};
     
-    // Listamos todos os campos que devem ser números inteiros ou decimais
+    // Listamos todos os campos que devem ser numeros inteiros ou decimais
     const integerFields = [
         'idade', 'altura', 'envergadura', 'salto_vertical', 'controle_bola', 
         'drible', 'passe_curto', 'passe_longo', 'finalizacao', 'cabeceio', 
@@ -129,19 +340,20 @@ document.querySelectorAll('.skill-slider').forEach(slider => {
     ];
     const floatFields = ['peso', 'percentual_gordura', 'velocidade_sprint', 'agilidade'];
 
-    document.querySelectorAll('input, select, textarea').forEach(el => {
+    const fieldSource = elements.formContainer ? elements.formContainer : document;
+    fieldSource.querySelectorAll('input, select, textarea').forEach(el => {
         if (!el.id) return; // Pula elementos sem ID
 
         let value = el.value.trim();
 
-        // 1. Se o campo for um número inteiro...
+        // 1. Se o campo for um numero inteiro...
         if (integerFields.includes(el.id)) {
-            // Se o campo não estiver vazio, converte para inteiro. Senão, deixa nulo.
+            // Se o campo nao estiver vazio, converte para inteiro. Senao, deixa nulo.
             data[el.id] = value ? parseInt(value, 10) : null;
         
-        // 2. Se o campo for um número decimal...
+        // 2. Se o campo for um numero decimal...
         } else if (floatFields.includes(el.id)) {
-            // Substitui vírgula por ponto e converte para decimal.
+            // Substitui virgula por ponto e converte para decimal.
             value = value.replace(',', '.');
             data[el.id] = value ? parseFloat(value) : null;
         
@@ -162,7 +374,7 @@ document.querySelectorAll('.skill-slider').forEach(slider => {
 
 function displayAnalysis(dadosAtleta, analysis) {
   const nomeCompleto = `${dadosAtleta.nome} ${dadosAtleta.sobrenome}`;
-  elements.reportTitle.innerText = `Relatório de Análise para ${nomeCompleto.toUpperCase()}`;
+  elements.reportTitle.innerText = `Relatorio de Analise para ${nomeCompleto.toUpperCase()}`;
   elements.iaAnalysisDiv.innerHTML = safeHtml(analysis.relatorio);
   elements.playerComparisonDiv.innerHTML = safeHtml(analysis.comparacao);
   elements.trainingPlanDiv.innerHTML = safeHtml(analysis.plano_treino);
@@ -172,9 +384,9 @@ function displayAnalysis(dadosAtleta, analysis) {
   elements.resultsContent.classList.remove('hidden');
   populateSkillsFromData(dadosAtleta);
 
-  // 2) Só então cria/redimensiona o gráfico
+  // 2) So entao cria/redimensiona o grafico
 requestAnimationFrame(() => {
-  renderSkillChart(dadosAtleta); // Passa os dados do atleta para o gráfico
+  renderSkillChart(dadosAtleta); // Passa os dados do atleta para o grafico
   
   // ADICIONE ESTE BLOCO
   if (analysis.evaluation) {
@@ -187,17 +399,17 @@ requestAnimationFrame(() => {
 function displayError(error) {
     elements.loadingDiv.classList.add('hidden');
     elements.resultsContent.classList.remove('hidden');
-    elements.reportTitle.innerText = 'Erro na Análise';
+    elements.reportTitle.innerText = 'Erro na Analise';
 
-    // ✅ CÓDIGO MELHORADO PARA EXIBIR ERROS DETALHADOS
+    //  CODIGO MELHORADO PARA EXIBIR ERROS DETALHADOS
     let errorMessage = error.message;
-    // Se a mensagem de erro contém um corpo JSON, formata para ser legível
+    // Se a mensagem de erro contem um corpo JSON, formata para ser legivel
     if (errorMessage.includes('Corpo:')) {
         try {
             // Tenta extrair e formatar o JSON do erro
             const jsonPart = errorMessage.substring(errorMessage.indexOf('{'));
             const errorObj = JSON.parse(jsonPart);
-            // Formata o JSON para exibição com <pre> para manter a indentação
+            // Formata o JSON para exibicao com <pre> para manter a indentacao
             errorMessage = `<pre class="text-left text-sm whitespace-pre-wrap">${JSON.stringify(errorObj, null, 2)}</pre>`;
         } catch (e) {
             // Se falhar, apenas exibe a mensagem original
@@ -208,7 +420,7 @@ function displayError(error) {
     }
 
     elements.iaAnalysisDiv.innerHTML = `
-        <p class="text-red-400 font-bold mb-2">Não foi possível gerar a análise. Detalhes:</p>
+        <p class="text-red-400 font-bold mb-2">Nao foi possivel gerar a analise. Detalhes:</p>
         ${errorMessage}
     `;
     
@@ -217,13 +429,13 @@ function displayError(error) {
     if(skillChart) skillChart.destroy();
 }
 
-    // Campos de habilidades usados no gráfico
+    // Campos de habilidades usados no grafico
 const SKILL_FIELDS = [
   'controle_bola','drible','passe_curto','passe_longo','finalizacao',
   'cabeceio','desarme','visao_jogo','compostura','agressividade'
 ];
 
-// Preenche sliders e spans a partir de dados do atleta (relatório/salvo)
+// Preenche sliders e spans a partir de dados do atleta (relatorio/salvo)
 function populateSkillsFromData(src) {
   if (!src) return;
   SKILL_FIELDS.forEach(id => {
@@ -236,7 +448,7 @@ function populateSkillsFromData(src) {
   });
 }
 
-// Lê os sliders diretamente do DOM (garante valores atuais)
+// Le os sliders diretamente do DOM (garante valores atuais)
 function readSkillsFromDOM() {
   const ids = [
     'controle_bola','drible','passe_curto','passe_longo','finalizacao',
@@ -249,11 +461,11 @@ function readSkillsFromDOM() {
   });
   return skills;
 }
-    // --- FUNÇÃO DO GRÁFICO ---
+    // --- FUNCAO DO GRAFICO ---
    function renderSkillChart(dadosAtleta) {
   const ctx = document.getElementById('skillChart').getContext('2d');
 
-  // 1) IDs dos campos que estão no HTML (os "name"/"id" dos sliders):
+  // 1) IDs dos campos que estao no HTML (os "name"/"id" dos sliders):
   const campos = [
    'controle_bola',
     'drible',
@@ -267,21 +479,21 @@ function readSkillsFromDOM() {
     'agressividade'
   ];
 
-  // 2) Rótulos bonitos para aparecer no gráfico:
+  // 2) Rotulos bonitos para aparecer no grafico:
   const labels = [
       'Controle de Bola',
     'Drible',
     'Passe Curto',
     'Passe Longo',
-    'Finalização',
+    'Finalizacao',
     'Cabeceio',
     'Desarme',
-    'Visão de Jogo',
+    'Visao de Jogo',
     'Compostura',
     'Agressividade'
   ];
 
-  // 3) Converte TUDO para número (se vier vazio/NaN, vira 0):
+  // 3) Converte TUDO para numero (se vier vazio/NaN, vira 0):
   const source = dadosAtleta || readSkillsFromDOM();
   const n = id => {
     const v = Number(source[id]);
@@ -289,19 +501,19 @@ function readSkillsFromDOM() {
   };
   const data = campos.map(n);
 
-  // (opcional) se quiser normalizar para 0–100:
+  // (opcional) se quiser normalizar para 0100:
   // const data = campos.map(id => Math.max(0, Math.min(100, n(id))));
 
-  // 4) Evita “gráfico duplicado” quando re-renderiza
+  // 4) Evita grafico duplicado quando re-renderiza
   if (skillChart) skillChart.destroy();
 
-  // 5) Cria o gráfico já com eixo configurado
+  // 5) Cria o grafico ja com eixo configurado
   skillChart = new Chart(ctx, {
     type: 'radar',
     data: {
       labels,
       datasets: [{
-        label: 'Habilidades Técnicas',
+        label: 'Habilidades Tecnicas',
         data,
         fill: true,
         backgroundColor: 'rgba(249, 115, 22, 0.2)',
@@ -332,8 +544,8 @@ function readSkillsFromDOM() {
     max: 10,
     ticks: {
       stepSize: 1,
-      showLabelBackdrop: false,     // tira o retângulo atrás dos números
-      backdropColor: 'rgba(0,0,0,0)' // redundante, só para garantir
+      showLabelBackdrop: false,     // tira o retangulo atras dos numeros
+      backdropColor: 'rgba(0,0,0,0)' // redundante, so para garantir
     },
     grid: { color: 'rgba(229,231,235,0.15)' },
     angleLines: { color: 'rgba(229,231,235,0.15)' },
@@ -344,8 +556,11 @@ function readSkillsFromDOM() {
   });
 }
 
-    // --- LÓGICA DE SALVAR E CARREGAR RELATÓRIOS - Alterado para Phyton/docker---
+    // --- LOGICA DE SALVAR E CARREGAR RELATORIOS - Alterado para Phyton/docker---
    async function saveReport(dadosAtleta, analysis) {
+    if (!ensureAuthenticated()) {
+        return;
+    }
     const nomeCompleto = `${dadosAtleta.nome} ${dadosAtleta.sobrenome}`;
     const reportData = {
         athleteName: nomeCompleto,
@@ -353,23 +568,40 @@ function readSkillsFromDOM() {
         analysis: analysis
     };
 
-    await fetch('http://127.0.0.1:8000/api/reports', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(reportData)
-    });
+    try {
+        const response = await authorizedFetch(`${API_BASE_URL}/api/reports`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(reportData)
+        });
+
+        if (!response.ok) {
+            throw new Error('Falha ao salvar relatorio.');
+        }
+    } catch (error) {
+        console.error('Erro ao salvar relatorio:', error);
+        setAuthStatus('Nao foi possivel salvar o relatorio.', true);
+    }
 }
     function getSavedReports() {
         return JSON.parse(localStorage.getItem('jornScoutReports')) || [];
     }
     
   async function showReportsModal() {
-    const response = await fetch('http://127.0.0.1:8000/api/reports');
-    const reports = await response.json(); // Lê do backend
+    if (!ensureAuthenticated()) {
+        return;
+    }
+
+    try {
+        const response = await authorizedFetch(`${API_BASE_URL}/api/reports`);
+        if (!response.ok) {
+            throw new Error('Falha ao carregar relatorios.');
+        }
+        const reports = await response.json();
         elements.reportsListContainer.innerHTML = '';
 
         if (reports.length === 0) {
-            elements.reportsListContainer.innerHTML = '<p class="text-gray-400 text-center">Nenhum relatório salvo ainda.</p>';
+            elements.reportsListContainer.innerHTML = '<p class="text-gray-400 text-center">Nenhum relatorio salvo ainda.</p>';
         } else {
             const list = document.createElement('ul');
             list.className = 'space-y-3';
@@ -379,13 +611,13 @@ function readSkillsFromDOM() {
                 listItem.innerHTML = `
                     <div class="cursor-pointer flex-grow report-item-view">
                         <p class="font-bold text-white">${report.athlete_name}</p>
-                        <p class="text-sm text-gray-400">Análise de ${new Date(report.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
+                        <p class="text-sm text-gray-400">Analise de ${new Date(report.date).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
                     </div>
                     <button class="delete-report-btn text-red-500 hover:text-red-400 font-bold text-2xl" data-report-id="${report.id}">
                         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                     </button>
                 `;
-                
+
                 listItem.querySelector('.report-item-view').addEventListener('click', () => {
                     displayAnalysis(report.dados_atleta, report.analysis);
                     elements.resultsDiv.classList.remove('hidden');
@@ -401,42 +633,59 @@ function readSkillsFromDOM() {
                 list.appendChild(listItem);
             });
             elements.reportsListContainer.appendChild(list);
-            // 1) Mostra o container primeiro
         }
 
         elements.reportsModal.classList.remove('hidden');
+    } catch (error) {
+        console.error('Erro ao carregar relatorios:', error);
+        setAuthStatus('Nao foi possivel carregar os relatorios.', true);
+    }
+}
+   async function deleteReport(reportId) {
+    if (!ensureAuthenticated()) {
+        return;
     }
 
-   async function deleteReport(reportId) {
-    if (confirm('Tem certeza que deseja excluir este relatório?')) {
-       await fetch(`http://127.0.0.1:8000/api/reports/${reportId}`, {
-            method: 'DELETE'
-        });
-        showReportsModal(); // Atualiza a lista
+    if (confirm('Tem certeza que deseja excluir este relatorio?')) {
+        try {
+            const response = await authorizedFetch(`${API_BASE_URL}/api/reports/${reportId}`, {
+                method: 'DELETE'
+            });
+
+            if (!response.ok) {
+                throw new Error('Falha ao excluir relatorio.');
+            }
+
+            showReportsModal();
+        } catch (error) {
+            console.error('Erro ao excluir relatorio:', error);
+            setAuthStatus('Erro ao excluir o relatorio.', true);
+        }
     }
 }
 
-    // --- CHAMADA À API GEMINI ---
-  async function getGeminiAnalysis(dadosAtleta) {
-    // O endereço do nosso novo backend Python
-    const backendUrl = 'http://127.0.0.1:8000/api/analyze';
 
-    const response = await fetch(backendUrl, {
+    // --- CHAMADA A API GEMINI ---
+  async function getGeminiAnalysis(dadosAtleta) {
+    const backendUrl = `${API_BASE_URL}/api/analyze`;
+
+    const response = await authorizedFetch(backendUrl, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(dadosAtleta) // Apenas envia os dados puros
+        body: JSON.stringify(dadosAtleta)
     });
 
     if (!response.ok) {
-        // Pega o erro detalhado do nosso backend para exibir
         const errorData = await response.json();
         throw new Error(`Erro no servidor: ${errorData.detail || response.statusText}`);
     }
     
-    return await response.json(); // Retorna o JSON já processado pelo backend
+    return await response.json();
 }
+
+
 
 // script.js (cole no final do arquivo)
 
@@ -449,9 +698,9 @@ function renderEvaluation(evaluationData) {
     if (elements.evalSummary) {
         elements.evalSummary.innerHTML = `
             <div class="space-y-2 text-gray-200">
-                <p><strong>Melhor Posição Sugerida:</strong> <span class="font-bold text-orange-400">${best_position}</span></p>
+                <p><strong>Melhor Posicao Sugerida:</strong> <span class="font-bold text-orange-400">${best_position}</span></p>
                 <p><strong>Score de Potencial:</strong> <span class="font-bold text-white">${potential_score} / 100</span></p>
-                <p><strong>Risco de Lesão:</strong> <span class="font-bold text-white">${injury_risk_label} (${injury_risk_score} / 100)</span></p>
+                <p><strong>Risco de Lesao:</strong> <span class="font-bold text-white">${injury_risk_label} (${injury_risk_score} / 100)</span></p>
                 ${bmi ? `<p><strong>IMC:</strong> ${bmi}</p>` : ''}
                 ${notes && notes.length ? `<div class="mt-2 text-sm text-red-300"><strong>Notas:</strong><ul class="list-disc list-inside">${notes.map(n => `<li>${n}</li>`).join('')}</ul></div>` : ''}
             </div>
@@ -468,7 +717,7 @@ function renderEvaluation(evaluationData) {
         `).join('');
         elements.evalPositions.innerHTML = `
             <table class="w-full text-left">
-                <thead><tr><th class="pb-2 font-semibold text-gray-400">Posição</th><th class="pb-2 font-semibold text-gray-400">Score</th></tr></thead>
+                <thead><tr><th class="pb-2 font-semibold text-gray-400">Posicao</th><th class="pb-2 font-semibold text-gray-400">Score</th></tr></thead>
                 <tbody>${tableRows}</tbody>
             </table>
         `;
