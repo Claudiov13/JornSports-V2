@@ -156,7 +156,7 @@ KNOWN_PLAYER_KEYS = [
     ("nome","sobrenome"),
     ("First Name","Last Name"),
 ]
-KNOWN_SINGLE_PLAYER_KEYS = ["athlete","player","jogador","Atleta","Player"]
+KNOWN_SINGLE_PLAYER_KEYS = ["athlete","player","jogador","Atleta","Player","Athlete"]
 
 # mapeia nomes comuns de colunas para métricas "canônicas"
 METRIC_ALIASES = {
@@ -197,9 +197,17 @@ def coerce_uuid(s: str) -> UUID | None:
         return None
 
 def pick_first(d: dict, keys: list[str]) -> str | None:
+    """RETORNA O VALOR da primeira chave encontrada."""
     for k in keys:
         if k in d and str(d[k]).strip():
             return str(d[k]).strip()
+    return None
+
+def first_present_key(d: dict, candidates: list[str]) -> str | None:
+    """RETORNA O NOME DA COLUNA presente (não o valor)."""
+    for k in candidates:
+        if k in d and str(d[k]).strip():
+            return k
     return None
 
 def parse_date_from_row(row: dict) -> datetime | None:
@@ -274,7 +282,6 @@ class AthleteData(BaseModel):
 # ------------------------------------------------------------------------------
 # Rotas já existentes (Relatórios / Auth / Me / Analyze / Ingest CSV antigo)
 # ------------------------------------------------------------------------------
-
 @app.post("/api/reports", status_code=201)
 async def create_report(
     report_data: ReportCreate,
@@ -538,46 +545,104 @@ async def _process_after_insert(db: AsyncSession, player_id, metric, value, ts, 
 @app.post("/api/ingest/csv")
 async def ingest_csv(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """
-    CSV esperado com colunas:
-    first_name,last_name,external_id,metric,value,unit,recorded_at
-    recorded_at em ISO-8601 (ex.: 2025-03-20T10:30:00Z)
+    CSV esperado:
+      first_name,last_name,external_id,metric,value,unit,recorded_at (ISO-8601 com Z)
+    Sem transação aninhada. Faz flush por linha e commit 1x no final.
     """
-    raw = await file.read()
-    reader = csv.DictReader(io.StringIO(raw.decode("utf-8")))
+    # 1) Lê/decodifica robusto
+    try:
+        raw = await file.read()
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Não foi possível ler o arquivo: {e}")
+
+    text = None
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            text = raw.decode(enc)
+            break
+        except Exception:
+            continue
+    if text is None:
+        raise HTTPException(status_code=400, detail="Falha ao decodificar o arquivo (tente UTF-8).")
+
+    # 2) Detecta delimitador , ou ;
+    try:
+        sample = text[:4096]
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;")
+    except Exception:
+        class _D: delimiter = ","
+        dialect = _D()
+
+    reader = csv.DictReader(io.StringIO(text), dialect=dialect)
+
+    required = {"first_name","last_name","external_id","metric","value","unit","recorded_at"}
+    found = set([h.strip() for h in (reader.fieldnames or [])])
+    missing = required - found
+    if missing:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Colunas ausentes: {', '.join(sorted(missing))}. Cabeçalhos: {', '.join(sorted(found))}"
+        )
+
     inserted = 0
-    for row in reader:
-        p = await _find_or_create_player(
-            db,
-            row.get("first_name") or "",
-            row.get("last_name") or "",
-            row.get("external_id") or None
-        )
-        ts = datetime.fromisoformat(row["recorded_at"].replace("Z","+00:00"))
-        m = models.Measurement(
-            player_id=p.id,
-            metric=row["metric"],
-            value=float(row["value"]),
-            unit=row.get("unit") or "",
-            recorded_at=ts,
-            meta={"source":"csv"}
-        )
-        db.add(m)
-        await db.commit(); await db.refresh(m)
-        await _process_after_insert(
-            db, p.id, row["metric"], float(row["value"]), ts,
-            higher_better=(row["metric"].upper() not in {"LDH","CORTISOL","AST","GLICOSE"})
-        )
-        inserted += 1
-    return {"inserted": inserted}
+    errors = []
+
+    # 3) Processa linhas sem abrir db.begin()
+    for _ in reader:
+        row = {k: (_ or "").strip() for k, _ in _.items()}  # trim seguro
+        try:
+            p = await _find_or_create_player(
+                db,
+                row["first_name"], row["last_name"],
+                row["external_id"] or None
+            )
+
+            # Data/valor
+            try:
+                ts = datetime.fromisoformat(row["recorded_at"].replace("Z","+00:00"))
+            except Exception as e:
+                raise ValueError(f"recorded_at inválido: '{row['recorded_at']}' ({e})")
+            try:
+                val = float(str(row["value"]).replace(",", "."))
+            except Exception:
+                raise ValueError(f"value inválido: '{row['value']}'")
+
+            m = models.Measurement(
+                player_id=p.id,
+                metric=row["metric"],
+                value=val,
+                unit=row.get("unit") or "",
+                recorded_at=ts,
+                meta={"source": "csv"}
+            )
+            db.add(m)
+            # garante PK/visibilidade para selects subsequentes
+            await db.flush()
+
+            # gera alerta simples (essa função pode dar commit; tudo bem)
+            await _process_after_insert(
+                db, p.id, row["metric"], val, ts,
+                higher_better=(row["metric"].upper() not in {"LDH","CORTISOL","AST","GLICOSE"})
+            )
+
+            inserted += 1
+
+        except Exception as e:
+            errors.append({"row": reader.line_num, "error": str(e), "row_data": row})
+
+    # 4) Um commit no final (as linhas válidas ficam)
+    await db.commit()
+    return {"inserted": inserted, "errors": errors}
 
 # ------------------------------------------------------------------------------
 # NOVOS ENDPOINTS — Upload CSV (GPS/HRV) no formato flexível (largo/longo)
 # ------------------------------------------------------------------------------
-
 class UploadResponse(BaseModel):
     inserted: int
     players_touched: int
     metrics_detected: list[str]
+
+# --- SUBSTITUIR SOMENTE ESTA FUNÇÃO EM main.py ---
 
 @app.post("/api/measurements/upload", response_model=UploadResponse)
 async def upload_measurements(
@@ -586,41 +651,54 @@ async def upload_measurements(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    Aceita um CSV em dois formatos:
-
-      (A) Formato "longo": Athlete, Date, metric, value, unit
-      (B) Formato "largo": Athlete, Date, Total Distance, HSR Distance, rMSSD, ...
-
-    - Cria Player automaticamente (por nome) se não existir.
-    - Insere linhas em 'measurements' normalizando nomes de métricas.
+    Aceita CSV 'longo' (Athlete/Date/metric/value/unit) ou 'largo' (Athlete/Date/colunas de métricas).
+    Agora com detecção automática de delimitador (',' ou ';').
     """
     raw = await file.read()
+
+    # Decoding robusto
     try:
         txt = raw.decode("utf-8")
     except UnicodeDecodeError:
         txt = raw.decode("latin-1")
-    reader = csv.DictReader(io.StringIO(txt))
+
+    # >>> DETECÇÃO DO DELIMITADOR (corrige CSV do Excel com ';')
+    try:
+        sample = txt[:4096]
+        dialect = csv.Sniffer().sniff(sample, delimiters=",;")
+    except Exception:
+        class _D: delimiter = ","
+        dialect = _D()
+
+    # DictReader com o dialect detectado + strip dos headers
+    reader = csv.DictReader(io.StringIO(txt), dialect=dialect)
+    if reader.fieldnames:
+        reader.fieldnames = [ (h or "").strip() for h in reader.fieldnames ]
 
     inserted = 0
     players_touched = set()
     metrics_detected = set()
 
+    def first_present_key(d: dict, candidates: list[str]) -> str | None:
+        for k in candidates:
+            if k in d and str(d[k]).strip():
+                return k
+        return None
+
     async def get_or_create_player(row: dict):
-        # 1) se vier player_id explícito
         pid = pick_first(row, ["player_id","PlayerId","playerId"])
         if pid:
             u = coerce_uuid(pid)
             if u:
                 return u
 
-        # 2) tentar pares first_name/last_name
         for a,b in KNOWN_PLAYER_KEYS:
             if a in row and b in row and row[a] and row[b]:
                 first = str(row[a]).strip()
                 last  = str(row[b]).strip()
                 q = await db.execute(
                     select(models.Player).where(
-                        models.Player.first_name==first, 
+                        models.Player.first_name==first,
                         models.Player.last_name==last
                     )
                 )
@@ -628,10 +706,9 @@ async def upload_measurements(
                 if not p:
                     p = models.Player(first_name=first, last_name=last, external_ids={})
                     db.add(p)
-                    await db.flush()  # gera o id
+                    await db.flush()
                 return p.id
 
-        # 3) nome completo em uma coluna
         single = pick_first(row, KNOWN_SINGLE_PLAYER_KEYS)
         if single:
             parts = [x for x in single.split() if x.strip()]
@@ -639,7 +716,7 @@ async def upload_measurements(
             last  = " ".join(parts[1:]) if len(parts)>1 else ""
             q = await db.execute(
                 select(models.Player).where(
-                    models.Player.first_name==first, 
+                    models.Player.first_name==first,
                     models.Player.last_name==last
                 )
             )
@@ -652,56 +729,55 @@ async def upload_measurements(
 
         return None
 
-    async with db.begin():
-        for row in reader:
-            player_id = await get_or_create_player(row)
-            if not player_id:
-                # pula linhas que não conseguimos relacionar a um atleta
-                continue
+    # Processamento linha a linha (sem transação explícita)
+    for row in reader:
+        # strip simples em todos os valores da linha
+        row = {k: (v.strip() if isinstance(v, str) else v) for k,v in row.items()}
+        player_id = await get_or_create_player(row)
+        if not player_id:
+            continue
 
-            recorded_at = parse_date_from_row(row) or datetime.now(timezone.utc)
+        recorded_at = parse_date_from_row(row) or datetime.now(timezone.utc)
 
-            # (A) formato "longo": metric/value/unit por linha
-            metric_key = pick_first(row, ["metric","Metric","metrica"])
-            value_key  = pick_first(row, ["value","Value","valor"])
-            unit_key   = pick_first(row, ["unit","Unit","unidade"])
+        # (A) Formato longo
+        metric_col = first_present_key(row, ["metric","Metric","metrica"])
+        value_col  = first_present_key(row, ["value","Value","valor"])
+        unit_col   = first_present_key(row, ["unit","Unit","unidade"])
 
-            if metric_key and value_key:
-                mname = norm_metric(row[metric_key])
-                val   = coerce_float(row[value_key])
-                unit  = row.get(unit_key) if unit_key else None
-                if mname and val is not None:
-                    m = models.Measurement(
-                        player_id=player_id, metric=mname, value=val,
-                        unit=unit or "", recorded_at=recorded_at, meta={}
-                    )
-                    db.add(m)
-                    inserted += 1
-                    players_touched.add(player_id)
-                    metrics_detected.add(mname)
-                continue
-
-            # (B) formato "largo": várias colunas numéricas -> 1 Measurement por coluna
-            ignore_cols = set(KNOWN_DATE_KEYS)
-            for a,b in KNOWN_PLAYER_KEYS:
-                ignore_cols.add(a); ignore_cols.add(b)
-            ignore_cols.update(KNOWN_SINGLE_PLAYER_KEYS)
-
-            for col, val in row.items():
-                if col in ignore_cols:
-                    continue
-                fval = coerce_float(val)
-                if fval is None:
-                    continue
-                mname = norm_metric(col)
-                m = models.Measurement(
-                    player_id=player_id, metric=mname, value=fval,
-                    unit="", recorded_at=recorded_at, meta={}
-                )
-                db.add(m)
+        if metric_col and value_col:
+            mname = norm_metric(str(row[metric_col]).strip())
+            val   = coerce_float(row[value_col])
+            unit  = (row[unit_col] if unit_col else None)
+            if mname and val is not None:
+                db.add(models.Measurement(
+                    player_id=player_id, metric=mname, value=val,
+                    unit=(unit or ""), recorded_at=recorded_at, meta={}
+                ))
                 inserted += 1
                 players_touched.add(player_id)
                 metrics_detected.add(mname)
+            continue
+
+        # (B) Formato largo
+        ignore_cols = set(KNOWN_DATE_KEYS)
+        for a,b in KNOWN_PLAYER_KEYS:
+            ignore_cols.add(a); ignore_cols.add(b)
+        ignore_cols.update(KNOWN_SINGLE_PLAYER_KEYS)
+
+        for col, val in row.items():
+            if col in ignore_cols:
+                continue
+            fval = coerce_float(val)
+            if fval is None:
+                continue
+            mname = norm_metric(col)
+            db.add(models.Measurement(
+                player_id=player_id, metric=mname, value=fval,
+                unit="", recorded_at=recorded_at, meta={}
+            ))
+            inserted += 1
+            players_touched.add(player_id)
+            metrics_detected.add(mname)
 
     await db.commit()
     return UploadResponse(
@@ -709,11 +785,9 @@ async def upload_measurements(
         players_touched=len(players_touched),
         metrics_detected=sorted(metrics_detected),
     )
-
 # ------------------------------------------------------------------------------
 # NOVOS ENDPOINTS — Motor de Alertas (Sobrecarga & HRV)
 # ------------------------------------------------------------------------------
-
 def _now_utc():
     return datetime.now(timezone.utc)
 
@@ -767,46 +841,47 @@ async def generate_alerts(
     created = 0
     players = await _players_with_measurements(db)
 
-    async with db.begin():
-        for pid in players:
-            # -----------------------------
-            # Regra 1: Sobrecarga (carga externa)
-            # -----------------------------
-            load_metric = "high_speed_distance"
+    # IMPORTANTE: não abrir db.begin() aqui para evitar transação aninhada.
+    for pid in players:
+        # ----- Regra 1: Sobrecarga (carga externa) -----
+        load_metric = "high_speed_distance"
+        last7 = await _metric_sum(db, pid, load_metric, d7, now)
+        if last7 == 0:
+            load_metric = "total_distance"
             last7 = await _metric_sum(db, pid, load_metric, d7, now)
-            if last7 == 0:
-                load_metric = "total_distance"
-                last7 = await _metric_sum(db, pid, load_metric, d7, now)
 
-            # média semanal das 4 semanas anteriores (janela -35:-7)
-            prev28 = await _metric_sum(db, pid, load_metric, d35, d7)
-            weekly_avg_prev4 = (prev28 / 4.0) if prev28 > 0 else 0.0
+        prev28 = await _metric_sum(db, pid, load_metric, d35, d7)
+        weekly_avg_prev4 = (prev28 / 4.0) if prev28 > 0 else 0.0
 
-            if weekly_avg_prev4 > 0 and last7 > 1.5 * weekly_avg_prev4:
-                db.add(models.Alert(
-                    player_id=pid,
-                    level="alto",
-                    metric=load_metric,
-                    message=f"Pico de carga: últimos 7d={last7:.0f} > 150% da média semanal anterior ({weekly_avg_prev4:.0f}).",
-                    payload={"last7": last7, "weekly_avg_prev4": weekly_avg_prev4, "rule": "overload_150pc"},
-                ))
-                created += 1
+        if weekly_avg_prev4 > 0 and last7 > 1.5 * weekly_avg_prev4:
+            db.add(models.Alert(
+                player_id=pid,
+                level="alto",
+                metric=load_metric,
+                message=(
+                    f"Pico de carga: últimos 7d={last7:.0f} > 150% da média "
+                    f"semanal anterior ({weekly_avg_prev4:.0f})."
+                ),
+                payload={"last7": last7, "weekly_avg_prev4": weekly_avg_prev4, "rule": "overload_150pc"},
+            ))
+            created += 1
 
-            # -----------------------------
-            # Regra 2: HRV (resposta interna)
-            # -----------------------------
-            last3_avg  = await _metric_avg(db, pid, "hrv_rmssd", d3, now)
-            prev21_avg = await _metric_avg(db, pid, "hrv_rmssd", d24, d3)
+        # ----- Regra 2: HRV (resposta interna) -----
+        last3_avg  = await _metric_avg(db, pid, "hrv_rmssd", d3, now)
+        prev21_avg = await _metric_avg(db, pid, "hrv_rmssd", d24, d3)
 
-            if prev21_avg > 0 and last3_avg < 0.8 * prev21_avg:
-                db.add(models.Alert(
-                    player_id=pid,
-                    level="alto",
-                    metric="hrv_rmssd",
-                    message=f"Queda de HRV: média 3d={last3_avg:.1f} < 80% da média 21d ({prev21_avg:.1f}).",
-                    payload={"last3_avg": last3_avg, "prev21_avg": prev21_avg, "rule": "hrv_drop_20pc"},
-                ))
-                created += 1
+        if prev21_avg > 0 and last3_avg < 0.8 * prev21_avg:
+            db.add(models.Alert(
+                player_id=pid,
+                level="alto",
+                metric="hrv_rmssd",
+                message=(
+                    f"Queda de HRV: média 3d={last3_avg:.1f} < 80% da média 21d "
+                    f"({prev21_avg:.1f})."
+                ),
+                payload={"last3_avg": last3_avg, "prev21_avg": prev21_avg, "rule": "hrv_drop_20pc"},
+            ))
+            created += 1
 
     await db.commit()
     return {"created": created}
