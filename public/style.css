@@ -1,145 +1,314 @@
+/* ==========================================================================
+   Base & Reset
+   ========================================================================== */
 body {
-    font-family: 'Inter', sans-serif;
+  font-family: 'Inter', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Adiciona um gradiente sutil ao fundo para um visual mais dinâmico */
+/* Mantém seu fundo, mas com um glow esportivo sutil */
 body.bg-gray-900 {
-    background-color: #111827;
-    background-image: radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.05) 1px, transparent 0);
-    background-size: 40px 40px;
+  background-color: #111827;
+  background-image:
+    radial-gradient(1200px 600px at 10% -10%, rgba(0,255,198,0.10), transparent 40%),
+    radial-gradient(1200px 600px at 110% 10%, rgba(60,145,255,0.10), transparent 40%),
+    radial-gradient(circle at 1px 1px, rgba(255, 255, 255, 0.05) 1px, transparent 0);
+  background-size: auto, auto, 40px 40px;
 }
 
-/* Efeito de neon sutil para o cabeçalho */
-h1.text-orange-500 {
-    text-shadow: 0 0 8px rgba(249, 115, 22, 0.7), 0 0 20px rgba(249, 115, 22, 0.5);
+/* Título com neon sutil (mantendo sua cor) */
+h1.text-orange-500,
+h1 .text-orange-500 {
+  text-shadow: 0 0 8px rgba(249, 115, 22, 0.7), 0 0 20px rgba(249, 115, 22, 0.5);
 }
 
-/* Customização da barra de rolagem */
-::-webkit-scrollbar {
-    width: 8px;
-}
+/* ==========================================================================
+   Scrollbar
+   ========================================================================== */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: #1f2937; }
+::-webkit-scrollbar-thumb { background: #f97316; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #ea580c; }
 
-::-webkit-scrollbar-track {
-    background: #1f2937;
-}
-
-::-webkit-scrollbar-thumb {
-    background: #f97316;
-    border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: #ea580c;
-}
-
-/* Animação do Spinner de Carregamento */
+/* ==========================================================================
+   Spinner (mantido)
+   ========================================================================== */
 .spinner {
-    width: 56px;
-    height: 56px;
-    border: 5px solid #f97316;
-    border-bottom-color: transparent;
-    border-radius: 50%;
-    display: inline-block;
-    box-sizing: border-box;
-    animation: rotation 1s linear infinite;
-    margin-top: 20px;
+  width: 56px; height: 56px;
+  border: 5px solid #f97316; border-bottom-color: transparent;
+  border-radius: 50%;
+  display: inline-block; box-sizing: border-box;
+  animation: rotation 1s linear infinite;
+  margin-top: 20px;
 }
+@keyframes rotation { to { transform: rotate(360deg); } }
 
-@keyframes rotation {
-    0% {
-        transform: rotate(0deg);
-    }
-    100% {
-        transform: rotate(360deg);
-    }
-}
-
-/* Estilo para campos de input inválidos */
-input:invalid {
-    border-color: #ef4444; /* Cor vermelha para indicar erro */
-}
-
-input:required:placeholder-shown {
-    border-color: #374151;
-}
-
+/* ==========================================================================
+   Inputs: estados de validação (mantido + pequenos ajustes)
+   ========================================================================== */
+input:invalid { border-color: #ef4444; }
+input:required:placeholder-shown { border-color: #374151; }
 input:focus:invalid {
-    border-color: #ef4444;
-    box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.3);
 }
-
 input.user-touched:invalid { border-color: #ef4444; }
+input.user-touched:valid { border-color: #10b981; }
 
-/* Feedback positivo opcional */
-input.user-touched:valid { border-color: #10b981; /* green-500 */ }
+/* ==========================================================================
+   Modal: botão fechar (mantido)
+   ========================================================================== */
+#close-modal-btn { font-size: 2.5rem; line-height: 1; font-weight: bold; }
 
-/* Estilos para o Modal de Relatórios */
-#close-modal-btn {
-    font-size: 2.5rem;
-    line-height: 1;
-    font-weight: bold;
-}
-
-/* Estilos customizados para os sliders (barras de deslize) */
+/* ==========================================================================
+   Sliders (mantido)
+   ========================================================================== */
 .skill-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 8px;
-    background: #4b5563; /* Cor da trilha do slider */
-    border-radius: 5px;
-    outline: none;
-    opacity: 0.7;
-    transition: opacity .2s;
-    cursor: pointer;
+  -webkit-appearance: none; appearance: none; width: 100%;
+  height: 8px; background: #4b5563; border-radius: 5px;
+  outline: none; opacity: 0.9; transition: opacity .2s;
+  cursor: pointer;
 }
-
-.skill-slider:hover {
-    opacity: 1;
-}
-
+.skill-slider:hover { opacity: 1; }
 .skill-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 20px;
-    height: 20px;
-    background: #f97316; /* Cor da bolinha do slider */
-    cursor: grab;
-    border-radius: 50%;
-    border: 2px solid #111827;
+  -webkit-appearance: none; appearance: none;
+  width: 20px; height: 20px; background: #f97316;
+  cursor: grab; border-radius: 50%; border: 2px solid #111827;
 }
-
-.skill-slider::-webkit-slider-thumb:active { 
-    cursor: grabbing; }
-
+.skill-slider::-webkit-slider-thumb:active { cursor: grabbing; }
 .skill-slider::-moz-range-thumb {
-    width: 20px;
-    height: 20px;
-    background: #f97316;
-    cursor: grab;
-    border-radius: 50%;
-    border: 2px solid #111827;
+  width: 20px; height: 20px; background: #f97316;
+  cursor: grab; border-radius: 50%; border: 2px solid #111827;
 }
+.skill-slider::-moz-range-thumb:active { cursor: grabbing; }
 
-.skill-slider::-moz-range-thumb:active { 
-    cursor: grabbing; 
-}
-
-/* Container do Gráfico para corrigir o bug de tamanho */
+/* ==========================================================================
+   Gráfico (mantido)
+   ========================================================================== */
 .chart-container {
-  position: relative;
-  width: 100%;
-  height: clamp(380px, 48vh, 560px); /* estável e responsivo */
+  position: relative; width: 100%;
+  height: clamp(380px, 48vh, 560px);
   min-height: 380px;
 }
+#skillChart { width: 100% !important; height: 100% !important; display: block; }
 
-#skillChart {
-  width: 100% !important;
-  height: 100% !important;
-  display: block;
+/* ==========================================================================
+   Mapa tático (mantido)
+   ========================================================================== */
+#tactical-map .heatmap { transition: opacity 0.3s ease-in-out; }
+
+/* ==========================================================================
+   Header fixo + navegação
+   ========================================================================== */
+.header-glass {
+  backdrop-filter: blur(10px);
+  background: rgba(17, 24, 39, 0.75);
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.nav-link {
+  position: relative; transition: color .2s ease;
+}
+.nav-link::after {
+  content: ""; position: absolute; left: 0; bottom: -6px;
+  width: 0%; height: 2px; background: #00FFC6;
+  transition: width .25s ease;
+}
+.nav-link:hover { color: #fff; }
+.nav-link:hover::after { width: 100%; }
+
+/* ==========================================================================
+   Cards (glass + sombra esportiva)
+   ========================================================================== */
+.card {
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(60,145,255,0.25);
+}
+.card-muted {
+  border: 1px solid rgba(255,255,255,0.06);
+  background: rgba(255,255,255,0.04);
+  border-radius: 16px;
 }
 
-/* Estilo para o mapa tático */
-#tactical-map .heatmap {
-    transition: opacity 0.3s ease-in-out;
+/* ==========================================================================
+   Botões (primário, ghost e neon)
+   ========================================================================== */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 600; border-radius: 12px;
+  height: 42px; padding: 0 16px; gap: 8px;
+  transition: transform .06s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
+  border: 1px solid transparent; user-select: none;
+}
+.btn:active { transform: translateY(1px); }
+
+.btn-primary {
+  background: #f97316; color: #fff; border-color: #f97316;
+  box-shadow: 0 8px 24px rgba(249, 115, 22, 0.35);
+}
+.btn-primary:hover { background: #ea580c; border-color: #ea580c; }
+
+.btn-ghost {
+  background: rgba(255,255,255,0.06); color: #fff; border-color: rgba(255,255,255,0.10);
+}
+.btn-ghost:hover { background: rgba(255,255,255,0.12); border-color: rgba(255,255,255,0.18); }
+
+.btn-neon {
+  background: rgba(0,255,198,0.18); color: #00FFC6; border-color: rgba(0,255,198,0.35);
+  box-shadow: 0 10px 26px rgba(0,255,198,0.20);
+}
+.btn-neon:hover { background: rgba(0,255,198,0.26); border-color: rgba(0,255,198,0.45); }
+
+/* Estados disabled harmonizados com Tailwind */
+.btn[disabled],
+.opacity-50.cursor-not-allowed {
+  filter: saturate(0.7); cursor: not-allowed;
+}
+
+/* ==========================================================================
+   Inputs & file input aprimorados
+   ========================================================================== */
+.input {
+  background: #374151; border: 1px solid #4b5563; color: #E5E7EB;
+  border-radius: 10px; padding: 10px 12px;
+  transition: border-color .2s ease, box-shadow .2s ease;
+}
+.input:focus {
+  border-color: #f97316;
+  box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.25);
+  outline: none;
+}
+
+/* file input fallback (quando não usar Tailwind file:*) */
+input[type="file"] {
+  color: #E5E7EB;
+}
+input[type="file"]::-webkit-file-upload-button {
+  background: #f97316; color: #fff; border: 0; border-radius: 10px;
+  padding: 8px 12px; margin-right: 12px; cursor: pointer;
+}
+input[type="file"]::-webkit-file-upload-button:hover { background: #ea580c; }
+
+/* ==========================================================================
+   Alertas — cartões
+   ========================================================================== */
+.alert-card {
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.05);
+  border-radius: 14px;
+  padding: 16px;
+}
+.alert-card .metric { color: #00FFC6; font-weight: 700; }
+.alert-card .level { text-transform: uppercase; letter-spacing: .04em; }
+
+/* ==========================================================================
+   Split-Text Animation (inspirado em reactbits.dev)
+   Uso: envolver cada palavra em <span class="split-word" style="--d:120ms">
+   ou usar JS para quebrar (como você já faz no index).
+   ========================================================================== */
+@keyframes split-rise {
+  from { transform: translateY(12px) scale(.98); opacity: 0; filter: blur(2px); }
+  to   { transform: translateY(0) scale(1);      opacity: 1; filter: blur(0);   }
+}
+.split-line { display: inline-block; overflow: hidden; }
+.split-word {
+  display: inline-block;
+  animation: split-rise .6s cubic-bezier(.2,.8,.2,1) both;
+  animation-delay: var(--d, 0ms);
+  will-change: transform, opacity, filter;
+}
+
+/* Variante com “stroke glow” */
+.split-word.glow {
+  text-shadow:
+    0 0 6px rgba(0,255,198,0.55),
+    0 0 18px rgba(0,255,198,0.35);
+}
+
+/* Suporte para usuários com motion reduzido */
+@media (prefers-reduced-motion: reduce) {
+  .split-word { animation: none !important; opacity: 1 !important; transform: none !important; filter: none !important; }
+}
+
+/* ==========================================================================
+   Utilidades “esportivas”
+   ========================================================================== */
+.badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 12px; padding: 4px 8px; border-radius: 999px;
+  background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+}
+.badge--neon { background: rgba(0,255,198,0.14); border-color: rgba(0,255,198,0.35); color: #00FFC6; }
+.badge--orange { background: rgba(249,115,22,0.16); border-color: rgba(249,115,22,0.35); color: #FDBA74; }
+
+.kpi {
+  display: grid; gap: 2px;
+}
+.kpi .kpi-label { color: rgba(255,255,255,0.65); font-size: 12px; }
+.kpi .kpi-value { font-size: 28px; font-weight: 800; }
+
+/* ==========================================================================
+   “Glass sections” usadas nas novas áreas (Upload & Alertas)
+   ========================================================================== */
+.section-glass {
+  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.03));
+  border-radius: 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+}
+
+/* ==========================================================================
+   Pequenas animações de interação
+   ========================================================================== */
+.hover-rise {
+  transition: transform .15s ease, box-shadow .15s ease;
+  will-change: transform;
+}
+.hover-rise:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 14px 28px rgba(0,0,0,0.25);
+}
+
+/* Clique “press” */
+.pressable:active { transform: translateY(1px); }
+
+/* ==========================================================================
+   Helper para containers estreitos (telas pequenas)
+   ========================================================================== */
+@media (max-width: 420px) {
+  .kpi .kpi-value { font-size: 24px; }
+  .btn { height: 40px; padding: 0 14px; }
+}
+
+/* ==========================================================================
+   Classes auxiliares para compatibilidade com o HTML atual
+   (aplique junto com as classes do Tailwind — não conflitam)
+   ========================================================================== */
+.header-shadow { box-shadow: 0 6px 20px rgba(0,0,0,0.25); }
+.shadow-sport  { box-shadow: 0 10px 30px rgba(60,145,255,0.25); }
+
+/* ==========================================================================
+   Ajustes finos nos painéis existentes
+   ========================================================================== */
+#alerts-container > div { transition: background .2s ease, border-color .2s ease; }
+#alerts-container > div:hover { background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.16); }
+
+#upload-status {
+  min-height: 1.25rem; /* evita “pula-pula” quando muda o texto */
+}
+
+/* Demo de skeleton (opcional) para futuramente usar em carregamentos */
+.skeleton {
+  position: relative; overflow: hidden; background: rgba(255,255,255,0.06);
+}
+.skeleton::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+  animation: skeleton-move 1.4s infinite;
+}
+@keyframes skeleton-move {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(100%); }
 }
