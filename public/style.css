@@ -312,3 +312,23 @@ input[type="file"]::-webkit-file-upload-button:hover { background: #ea580c; }
   from { transform: translateX(-100%); }
   to   { transform: translateX(100%); }
 }
+/* View Tabs */
+.view-tab-button {
+  background-color: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.7);
+  border-radius: 0.75rem;
+  font-weight: 600;
+  padding: 0.55rem 0.9rem;
+  transition: background-color 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+.view-tab-button:hover {
+  color: #ffffff;
+  background-color: rgba(255, 255, 255, 0.12);
+  transform: translateY(-1px);
+}
+.view-tab-button.active {
+  background: linear-gradient(135deg, #f97316, #fb923c);
+  color: #0f172a;
+  box-shadow: 0 8px 18px rgba(249, 115, 22, 0.35);
+}

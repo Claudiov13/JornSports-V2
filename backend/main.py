@@ -2,6 +2,7 @@ import os
 import csv, io
 import json
 import logging
+import re
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 from uuid import UUID
@@ -19,9 +20,10 @@ from passlib.context import CryptContext
 from pydantic import BaseModel, EmailStr, Field
 from typing import Literal
 
-from sqlalchemy import select, text, func
+from sqlalchemy import select, text, func, or_
 from sqlalchemy.sql import and_
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import desc
 
 # Importa as configurações do banco de dados e os modelos de tabela
 import models
@@ -343,11 +345,14 @@ async def read_me(current_user: models.User = Depends(get_current_user)):
 
 @app.get("/api/reports")
 async def get_reports(
+    athlete: str | None = None,
     _current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Busca todos os relatórios salvos no banco de dados."""
+    """Busca todos os relatórios salvos no banco de dados (opcional: ?athlete=)."""
     query = select(models.Report).order_by(models.Report.date.desc())
+    if athlete:
+        query = query.where(func.lower(models.Report.athlete_name) == func.lower(athlete))
     result = await db.execute(query)
     reports = result.scalars().all()
     return reports
@@ -460,7 +465,13 @@ Lembrete final: devolva **apenas** o JSON pedido acima, sem ``` e sem texto extr
     return final_response
 
 # Helpers existentes do seu ingest "antigo"
-async def _find_or_create_player(db: AsyncSession, first, last, external_id=None):
+async def _find_or_create_player(
+    db: AsyncSession,
+    first,
+    last,
+    external_id=None,
+    owner_email: str | None = None,
+):
     """Tenta achar por external_id (prosoccer) ou por (nome, sobrenome).
        Se não existir, cria o jogador.
     """
@@ -480,12 +491,22 @@ async def _find_or_create_player(db: AsyncSession, first, last, external_id=None
     r = await db.execute(q)
     p = r.scalar_one_or_none()
     if p:
+        if owner_email:
+            ext = dict(p.external_ids or {})
+            if not ext.get("owner_email"):
+                ext["owner_email"] = owner_email.lower()
+                p.external_ids = ext
+                await db.commit()
+                await db.refresh(p)
         return p
 
     p = models.Player(
         first_name=first,
         last_name=last,
-        external_ids={"prosoccer": external_id} if external_id else {}
+        external_ids={
+            **({"prosoccer": external_id} if external_id else {}),
+            **({"owner_email": owner_email.lower()} if owner_email else {}),
+        },
     )
     db.add(p)
     await db.commit()
@@ -541,9 +562,13 @@ async def _process_after_insert(db: AsyncSession, player_id, metric, value, ts, 
         await db.commit()
 
     return score
-
+    
 @app.post("/api/ingest/csv")
-async def ingest_csv(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def ingest_csv(
+    file: UploadFile = File(...),
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """
     CSV esperado:
       first_name,last_name,external_id,metric,value,unit,recorded_at (ISO-8601 com Z)
@@ -594,7 +619,8 @@ async def ingest_csv(file: UploadFile = File(...), db: AsyncSession = Depends(ge
             p = await _find_or_create_player(
                 db,
                 row["first_name"], row["last_name"],
-                row["external_id"] or None
+                row["external_id"] or None,
+                owner_email=current_user.email if current_user else None,
             )
 
             # Data/valor
@@ -635,170 +661,198 @@ async def ingest_csv(file: UploadFile = File(...), db: AsyncSession = Depends(ge
     return {"inserted": inserted, "errors": errors}
 
 # ------------------------------------------------------------------------------
-# NOVOS ENDPOINTS — Upload CSV (GPS/HRV) no formato flexível (largo/longo)
+# Cadastro manual de atletas e códigos operacionais
 # ------------------------------------------------------------------------------
-class UploadResponse(BaseModel):
-    inserted: int
-    players_touched: int
-    metrics_detected: list[str]
 
-# --- SUBSTITUIR SOMENTE ESTA FUNÇÃO EM main.py ---
+class ManualPlayerCreate(BaseModel):
+    first_name: str = Field(..., min_length=1, max_length=60)
+    last_name: str | None = Field(default=None, max_length=80)
+    club_name: str = Field(..., min_length=2, max_length=120)
+    coach_name: str = Field(..., min_length=2, max_length=120)
+    club_code: str | None = Field(default=None, max_length=10)
+    coach_code: str | None = Field(default=None, max_length=10)
 
-@app.post("/api/measurements/upload", response_model=UploadResponse)
-async def upload_measurements(
-    file: UploadFile = File(...),
-    _current_user: models.User = Depends(get_current_user),
+class ManualPlayerResponse(BaseModel):
+    id: UUID
+    first_name: str | None = None
+    last_name: str | None = None
+    player_code: str
+    club_name: str
+    club_code: str
+    coach_name: str
+    coach_code: str
+    created_at: datetime
+
+def _normalize_code(source: str | None, fallback: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9]", "", (source or "")).upper()
+    if not cleaned:
+        cleaned = fallback
+    if len(cleaned) < 3:
+        cleaned = (cleaned + fallback).upper()
+    return cleaned[:3]
+
+def _extract_manual_info(player: models.Player) -> dict:
+    ext = player.external_ids or {}
+    manual = dict(ext.get("manual") or {})
+    for key in ("player_code", "club_name", "club_code", "coach_name", "coach_code", "owner_email", "sequence"):
+        if key not in manual and key in ext:
+            manual[key] = ext.get(key)
+    return manual
+
+def _ensure_external_ids(player: models.Player, manual_info: dict) -> dict:
+    ext = dict(player.external_ids or {})
+    ext.update({
+        "player_code": manual_info.get("player_code"),
+        "club_name": manual_info.get("club_name"),
+        "club_code": manual_info.get("club_code"),
+        "coach_name": manual_info.get("coach_name"),
+        "coach_code": manual_info.get("coach_code"),
+        "owner_email": manual_info.get("owner_email"),
+    })
+    ext["manual"] = manual_info
+    return ext
+
+def _existing_codes_and_max_seq(players: list[models.Player], club_code: str, coach_code: str, owner_email: str) -> tuple[set[str], int]:
+    existing_codes: set[str] = set()
+    max_seq = 0
+    for player in players:
+        manual = _extract_manual_info(player)
+        if not manual:
+            continue
+        if manual.get("club_code") != club_code:
+            continue
+        if manual.get("coach_code") != coach_code:
+            continue
+        owner = (manual.get("owner_email") or "").lower()
+        if owner and owner != owner_email:
+            continue
+        code = manual.get("player_code")
+        if code:
+            existing_codes.add(code)
+            match = re.search(r"(\d+)$", code)
+            if match:
+                max_seq = max(max_seq, int(match.group(1)))
+    return existing_codes, max_seq
+
+@app.post("/api/players/manual", response_model=ManualPlayerResponse, status_code=status.HTTP_201_CREATED)
+async def create_manual_player(
+    payload: ManualPlayerCreate,
+    current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Aceita CSV 'longo' (Athlete/Date/metric/value/unit) ou 'largo' (Athlete/Date/colunas de métricas).
-    Agora com detecção automática de delimitador (',' ou ';').
-    """
-    raw = await file.read()
+    owner_email = current_user.email.lower()
+    first_name = payload.first_name.strip()
+    last_name = (payload.last_name or "").strip() or None
+    if not first_name:
+        raise HTTPException(status_code=400, detail="Nome do atleta eh obrigatorio.")
 
-    # Decoding robusto
-    try:
-        txt = raw.decode("utf-8")
-    except UnicodeDecodeError:
-        txt = raw.decode("latin-1")
+    club_name = payload.club_name.strip()
+    coach_name = payload.coach_name.strip()
+    if not club_name:
+        raise HTTPException(status_code=400, detail="Clube eh obrigatorio.")
+    if not coach_name:
+        raise HTTPException(status_code=400, detail="Tecnico eh obrigatorio.")
 
-    # >>> DETECÇÃO DO DELIMITADOR (corrige CSV do Excel com ';')
-    try:
-        sample = txt[:4096]
-        dialect = csv.Sniffer().sniff(sample, delimiters=",;")
-    except Exception:
-        class _D: delimiter = ","
-        dialect = _D()
+    club_code = _normalize_code(payload.club_code or club_name, "CLB")
+    coach_code = _normalize_code(payload.coach_code or coach_name, "COA")
 
-    # DictReader com o dialect detectado + strip dos headers
-    reader = csv.DictReader(io.StringIO(txt), dialect=dialect)
-    if reader.fieldnames:
-        reader.fieldnames = [ (h or "").strip() for h in reader.fieldnames ]
+    players_res = await db.execute(select(models.Player))
+    players = players_res.scalars().all()
+    existing_codes, max_seq = _existing_codes_and_max_seq(players, club_code, coach_code, owner_email)
 
-    inserted = 0
-    players_touched = set()
-    metrics_detected = set()
+    seq = max_seq + 1
+    player_code = f"{club_code}{coach_code}{seq:03d}"
+    while player_code in existing_codes:
+        seq += 1
+        player_code = f"{club_code}{coach_code}{seq:03d}"
 
-    def first_present_key(d: dict, candidates: list[str]) -> str | None:
-        for k in candidates:
-            if k in d and str(d[k]).strip():
-                return k
-        return None
-
-    async def get_or_create_player(row: dict):
-        pid = pick_first(row, ["player_id","PlayerId","playerId"])
-        if pid:
-            u = coerce_uuid(pid)
-            if u:
-                return u
-
-        for a,b in KNOWN_PLAYER_KEYS:
-            if a in row and b in row and row[a] and row[b]:
-                first = str(row[a]).strip()
-                last  = str(row[b]).strip()
-                q = await db.execute(
-                    select(models.Player).where(
-                        models.Player.first_name==first,
-                        models.Player.last_name==last
-                    )
-                )
-                p = q.scalar_one_or_none()
-                if not p:
-                    p = models.Player(first_name=first, last_name=last, external_ids={})
-                    db.add(p)
-                    await db.flush()
-                return p.id
-
-        single = pick_first(row, KNOWN_SINGLE_PLAYER_KEYS)
-        if single:
-            parts = [x for x in single.split() if x.strip()]
-            first = parts[0]
-            last  = " ".join(parts[1:]) if len(parts)>1 else ""
-            q = await db.execute(
-                select(models.Player).where(
-                    models.Player.first_name==first,
-                    models.Player.last_name==last
-                )
-            )
-            p = q.scalar_one_or_none()
-            if not p:
-                p = models.Player(first_name=first, last_name=last, external_ids={})
-                db.add(p)
-                await db.flush()
-            return p.id
-
-        return None
-
-    # Processamento linha a linha (sem transação explícita)
-    for row in reader:
-        # strip simples em todos os valores da linha
-        row = {k: (v.strip() if isinstance(v, str) else v) for k,v in row.items()}
-        player_id = await get_or_create_player(row)
-        if not player_id:
-            continue
-
-        recorded_at = parse_date_from_row(row) or datetime.now(timezone.utc)
-
-        # (A) Formato longo
-        metric_col = first_present_key(row, ["metric","Metric","metrica"])
-        value_col  = first_present_key(row, ["value","Value","valor"])
-        unit_col   = first_present_key(row, ["unit","Unit","unidade"])
-
-        if metric_col and value_col:
-            mname = norm_metric(str(row[metric_col]).strip())
-            val   = coerce_float(row[value_col])
-            unit  = (row[unit_col] if unit_col else None)
-            if mname and val is not None:
-                db.add(models.Measurement(
-                    player_id=player_id, metric=mname, value=val,
-                    unit=(unit or ""), recorded_at=recorded_at, meta={}
-                ))
-                inserted += 1
-                players_touched.add(player_id)
-                metrics_detected.add(mname)
-            continue
-
-        # (B) Formato largo
-        ignore_cols = set(KNOWN_DATE_KEYS)
-        for a,b in KNOWN_PLAYER_KEYS:
-            ignore_cols.add(a); ignore_cols.add(b)
-        ignore_cols.update(KNOWN_SINGLE_PLAYER_KEYS)
-
-        for col, val in row.items():
-            if col in ignore_cols:
-                continue
-            fval = coerce_float(val)
-            if fval is None:
-                continue
-            mname = norm_metric(col)
-            db.add(models.Measurement(
-                player_id=player_id, metric=mname, value=fval,
-                unit="", recorded_at=recorded_at, meta={}
-            ))
-            inserted += 1
-            players_touched.add(player_id)
-            metrics_detected.add(mname)
-
-    await db.commit()
-    return UploadResponse(
-        inserted=inserted,
-        players_touched=len(players_touched),
-        metrics_detected=sorted(metrics_detected),
+    player = models.Player(
+        first_name=first_name,
+        last_name=last_name,
+        external_ids={},
     )
-# ------------------------------------------------------------------------------
-# NOVOS ENDPOINTS — Motor de Alertas (Sobrecarga & HRV)
-# ------------------------------------------------------------------------------
-def _now_utc():
-    return datetime.now(timezone.utc)
+    manual_info = {
+        "player_code": player_code,
+        "club_name": club_name,
+        "club_code": club_code,
+        "coach_name": coach_name,
+        "coach_code": coach_code,
+        "owner_email": owner_email,
+        "sequence": seq,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    player.external_ids = _ensure_external_ids(player, manual_info)
 
-async def _players_with_measurements(db: AsyncSession) -> list[UUID]:
+    db.add(player)
+    await db.commit()
+    await db.refresh(player)
+
+    return ManualPlayerResponse(
+        id=player.id,
+        first_name=player.first_name,
+        last_name=player.last_name,
+        player_code=player_code,
+        club_name=club_name,
+        club_code=club_code,
+        coach_name=coach_name,
+        coach_code=coach_code,
+        created_at=datetime.fromisoformat(manual_info["created_at"]),
+    )
+
+class GenerateAlertsRequest(BaseModel):
+    player_id: UUID | None = None
+    player_code: str | None = None
+
+async def _find_player_by_code(
+    db: AsyncSession,
+    code: str,
+    owner_email: str | None = None,
+) -> models.Player | None:
+    code = (code or "").strip().upper()
+    if not code:
+        return None
+    res = await db.execute(select(models.Player))
+    players = res.scalars().all()
+    for player in players:
+        manual = _extract_manual_info(player)
+        ext = player.external_ids or {}
+        candidate = (manual.get("player_code") or ext.get("player_code") or "").upper()
+        if candidate != code:
+            continue
+        owner = (manual.get("owner_email") or ext.get("owner_email") or "").lower()
+        if owner_email and owner and owner != owner_email.lower():
+            continue
+        return player
+    return None
+
+async def _players_with_measurements(
+    db: AsyncSession,
+    owner_email: str | None = None,
+) -> list[UUID]:
     q = await db.execute(select(models.Measurement.player_id).distinct())
-    return [r[0] for r in q.all()]
+    player_ids: list[UUID] = []
+    for row in q.all():
+        player_id = row[0]
+        player = await db.get(models.Player, player_id)
+        if not player:
+            continue
+        manual = _extract_manual_info(player)
+        ext = player.external_ids or {}
+        owner = (manual.get("owner_email") or ext.get("owner_email") or "").lower()
+        if owner_email and owner and owner != owner_email.lower():
+            continue
+        player_ids.append(player_id)
+    return player_ids
 
-async def _metric_sum(db, player_id, metric, start, end):
+async def _metric_sum(
+    db: AsyncSession,
+    player_id: UUID,
+    metric: str,
+    start: datetime,
+    end: datetime,
+) -> float:
     q = await db.execute(
-        select(func.sum(models.Measurement.value))
-        .where(
+        select(func.sum(models.Measurement.value)).where(
             models.Measurement.player_id == player_id,
             models.Measurement.metric == metric,
             models.Measurement.recorded_at >= start,
@@ -808,10 +862,15 @@ async def _metric_sum(db, player_id, metric, start, end):
     v = q.scalar()
     return float(v or 0.0)
 
-async def _metric_avg(db, player_id, metric, start, end):
+async def _metric_avg(
+    db: AsyncSession,
+    player_id: UUID,
+    metric: str,
+    start: datetime,
+    end: datetime,
+) -> float:
     q = await db.execute(
-        select(func.avg(models.Measurement.value))
-        .where(
+        select(func.avg(models.Measurement.value)).where(
             models.Measurement.player_id == player_id,
             models.Measurement.metric == metric,
             models.Measurement.recorded_at >= start,
@@ -823,27 +882,41 @@ async def _metric_avg(db, player_id, metric, start, end):
 
 @app.post("/api/alerts/generate")
 async def generate_alerts(
+    payload: GenerateAlertsRequest | None = None,
     _current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """
-    Regras:
-      - Sobrecarga (carga externa): soma de high_speed_distance (fallback total_distance)
-        nos últimos 7 dias > 150% da média semanal das 4 semanas anteriores.
-      - HRV: média rMSSD últimos 3 dias < 80% da média dos 21 dias anteriores.
-    """
-    now = _now_utc()
-    d7  = now - timedelta(days=7)
+    owner_email = (_current_user.email or "").lower()
+    target_ids: list[UUID]
+
+    if payload and (payload.player_id or payload.player_code):
+        player: models.Player | None = None
+        if payload.player_id:
+            player = await db.get(models.Player, payload.player_id)
+        elif payload.player_code:
+            player = await _find_player_by_code(db, payload.player_code, owner_email=owner_email)
+        if not player:
+            raise HTTPException(status_code=404, detail="Atleta nao encontrado para gerar alertas.")
+        manual = _extract_manual_info(player)
+        ext = player.external_ids or {}
+        owner = (manual.get("owner_email") or ext.get("owner_email") or "").lower()
+        if owner and owner != owner_email:
+            raise HTTPException(status_code=403, detail="Atleta nao vinculado ao treinador atual.")
+        target_ids = [player.id]
+    else:
+        target_ids = await _players_with_measurements(db, owner_email=owner_email)
+
+    if not target_ids:
+        return {"created": 0}
+
+    now = datetime.now(timezone.utc)
+    d7 = now - timedelta(days=7)
     d35 = now - timedelta(days=35)
-    d3  = now - timedelta(days=3)
+    d3 = now - timedelta(days=3)
     d24 = now - timedelta(days=24)
 
     created = 0
-    players = await _players_with_measurements(db)
-
-    # IMPORTANTE: não abrir db.begin() aqui para evitar transação aninhada.
-    for pid in players:
-        # ----- Regra 1: Sobrecarga (carga externa) -----
+    for pid in target_ids:
         load_metric = "high_speed_distance"
         last7 = await _metric_sum(db, pid, load_metric, d7, now)
         if last7 == 0:
@@ -859,15 +932,18 @@ async def generate_alerts(
                 level="alto",
                 metric=load_metric,
                 message=(
-                    f"Pico de carga: últimos 7d={last7:.0f} > 150% da média "
-                    f"semanal anterior ({weekly_avg_prev4:.0f})."
+                    f"Pico de carga: ultimos 7d={last7:.0f} > 150% da media semanal anterior "
+                    f"({weekly_avg_prev4:.0f})."
                 ),
-                payload={"last7": last7, "weekly_avg_prev4": weekly_avg_prev4, "rule": "overload_150pc"},
+                payload={
+                    "last7": last7,
+                    "weekly_avg_prev4": weekly_avg_prev4,
+                    "rule": "overload_150pc",
+                },
             ))
             created += 1
 
-        # ----- Regra 2: HRV (resposta interna) -----
-        last3_avg  = await _metric_avg(db, pid, "hrv_rmssd", d3, now)
+        last3_avg = await _metric_avg(db, pid, "hrv_rmssd", d3, now)
         prev21_avg = await _metric_avg(db, pid, "hrv_rmssd", d24, d3)
 
         if prev21_avg > 0 and last3_avg < 0.8 * prev21_avg:
@@ -876,40 +952,226 @@ async def generate_alerts(
                 level="alto",
                 metric="hrv_rmssd",
                 message=(
-                    f"Queda de HRV: média 3d={last3_avg:.1f} < 80% da média 21d "
-                    f"({prev21_avg:.1f})."
+                    f"Queda de HRV: media 3d={last3_avg:.1f} < 80% da media 21d ({prev21_avg:.1f})."
                 ),
-                payload={"last3_avg": last3_avg, "prev21_avg": prev21_avg, "rule": "hrv_drop_20pc"},
+                payload={
+                    "last3_avg": last3_avg,
+                    "prev21_avg": prev21_avg,
+                    "rule": "hrv_drop_20pc",
+                },
             ))
             created += 1
 
     await db.commit()
     return {"created": created}
 
-@app.get("/api/alerts")
-async def list_alerts(
+# ================================
+# PLAYERS API (lista, detalhes)
+# ================================
+
+class PlayerSummary(BaseModel):
+    id: UUID
+    first_name: str | None = None
+    last_name: str | None = None
+    metrics_count: int = 0
+    last_measurement_at: datetime | None = None
+    alerts_unread: int = 0
+    player_code: str | None = None
+    club_name: str | None = None
+    club_code: str | None = None
+    coach_name: str | None = None
+    coach_code: str | None = None
+
+class PlayerDetail(BaseModel):
+    id: UUID
+    first_name: str | None = None
+    last_name: str | None = None
+    age: int | None = None  # se nao tiver no modelo, permanece None
+    player_code: str | None = None
+    club_name: str | None = None
+    club_code: str | None = None
+    coach_name: str | None = None
+    coach_code: str | None = None
+
+def _full_name(p: models.Player) -> str:
+    return f"{(p.first_name or '').strip()} {(p.last_name or '').strip()}".strip()
+
+@app.get("/api/players", response_model=list[PlayerSummary])
+async def list_players(
+    _current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    club_code: str | None = None,
+    coach_code: str | None = None,
+    q: str | None = None,
+):
+    # todos os players que já têm medição OU alerta OU relatório
+    user_email = (_current_user.email or "").lower()
+    players_res = await db.execute(select(models.Player))
+    players = players_res.scalars().all()
+    club_code = (club_code or "").strip().upper() or None
+    coach_code = (coach_code or "").strip().upper() or None
+    search = (q or "").strip().lower() or None
+
+    out: list[PlayerSummary] = []
+    for p in players:
+        manual = _extract_manual_info(p)
+        ext = p.external_ids or {}
+        owner = (manual.get("owner_email") or ext.get("owner_email") or "").lower()
+        if owner and owner != user_email:
+            continue
+        manual_club = (manual.get("club_code") or ext.get("club_code") or "").upper()
+        manual_coach = (manual.get("coach_code") or ext.get("coach_code") or "").upper()
+        if club_code and manual_club != club_code:
+            continue
+        if coach_code and manual_coach != coach_code:
+            continue
+        if search:
+            full_name = f"{(p.first_name or '').lower()} {(p.last_name or '').lower()}".strip()
+            code_value = (manual.get("player_code") or ext.get("player_code") or "").lower()
+            if search not in full_name and search not in code_value:
+                continue
+        # contagem de métricas e última medição
+        m_agg = await db.execute(
+            select(
+                func.count(models.Measurement.id),
+                func.max(models.Measurement.recorded_at)
+            ).where(models.Measurement.player_id == p.id)
+        )
+        m_count, m_last = m_agg.first() or (0, None)
+
+        # não lidos
+        a_agg = await db.execute(
+            select(func.count(models.Alert.id)).where(
+                models.Alert.player_id == p.id,
+                (models.Alert.acknowledged == 0) | (models.Alert.acknowledged.is_(None))
+            )
+        )
+        a_unread = a_agg.scalar() or 0
+
+        out.append(PlayerSummary(
+            id=p.id,
+            first_name=p.first_name,
+            last_name=p.last_name,
+            metrics_count=int(m_count or 0),
+            last_measurement_at=m_last,
+            alerts_unread=int(a_unread),
+            player_code=manual.get("player_code") or ext.get("player_code"),
+            club_name=manual.get("club_name") or ext.get("club_name"),
+            club_code=manual_club or None,
+            coach_name=manual.get("coach_name") or ext.get("coach_name"),
+            coach_code=manual_coach or None,
+        ))
+    # ordena por última medição desc
+    out.sort(key=lambda r: (r.last_measurement_at or datetime.min.replace(tzinfo=timezone.utc)), reverse=True)
+    return out
+
+@app.get("/api/players/{player_id}", response_model=PlayerDetail)
+async def get_player(
+    player_id: UUID,
+    _current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+
+    p = await db.get(models.Player, player_id)
+    if not p:
+        raise HTTPException(404, "Atleta nao encontrado")
+    manual = _extract_manual_info(p)
+    ext = p.external_ids or {}
+    owner = (manual.get("owner_email") or ext.get("owner_email") or "").lower()
+    user_email = (_current_user.email or "").lower()
+    if owner and owner != user_email:
+        raise HTTPException(status_code=403, detail="Atleta nao vinculado a este treinador.")
+    age = getattr(p, "age", None)
+    return PlayerDetail(
+        id=p.id,
+        first_name=p.first_name,
+        last_name=p.last_name,
+        age=age,
+        player_code=manual.get("player_code") or ext.get("player_code"),
+        club_name=manual.get("club_name") or ext.get("club_name"),
+        club_code=manual.get("club_code") or ext.get("club_code"),
+        coach_name=manual.get("coach_name") or ext.get("coach_name"),
+        coach_code=manual.get("coach_code") or ext.get("coach_code"),
+    )
+
+@app.get("/api/players/by-code/{player_code}", response_model=PlayerDetail)
+async def get_player_by_code(
+    player_code: str,
+    _current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    owner_email = (_current_user.email or "").lower()
+    player = await _find_player_by_code(db, player_code, owner_email=owner_email)
+    if not player:
+        raise HTTPException(status_code=404, detail="Atleta nao encontrado")
+    return await get_player(player.id, _current_user=_current_user, db=db)
+
+@app.get("/api/players/{player_id}/measurements")
+async def get_player_measurements(
+    player_id: UUID,
+    metric: str | None = None,
+    limit: int = 500,
+    _current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(models.Measurement).where(models.Measurement.player_id == player_id)
+    if metric:
+        q = q.where(models.Measurement.metric == metric)
+    q = q.order_by(desc(models.Measurement.recorded_at)).limit(limit)
+    r = await db.execute(q)
+    items = r.scalars().all()
+    # resposta enxuta
+    return [
+        {
+            "id": str(m.id),
+            "metric": m.metric,
+            "value": m.value,
+            "unit": m.unit,
+            "recorded_at": m.recorded_at,
+        }
+        for m in items
+    ]
+
+@app.get("/api/players/{player_id}/alerts")
+async def get_player_alerts(
+    player_id: UUID,
     limit: int = 100,
     _current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    q = select(models.Alert).order_by(models.Alert.generated_at.desc()).limit(limit)
-    res = await db.execute(q)
-    return res.scalars().all()
+    q = select(models.Alert).where(models.Alert.player_id == player_id).order_by(desc(models.Alert.generated_at)).limit(limit)
+    r = await db.execute(q)
+    return r.scalars().all()
 
-class AckPayload(BaseModel):
-    acknowledged: bool = True
-
-@app.patch("/api/alerts/{alert_id}/ack")
-async def ack_alert(
-    alert_id: str,
-    payload: AckPayload,
+@app.get("/api/players/{player_id}/reports")
+async def get_player_reports(
+    player_id: UUID,
+    limit: int = 50,
     _current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    alert = await db.get(models.Alert, alert_id)
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alerta não encontrado")
-    alert.acknowledged = 1 if payload.acknowledged else 0
-    await db.commit()
-    await db.refresh(alert)
-    return {"detail": "ok", "acknowledged": alert.acknowledged}
+    """
+    Fallback: se Report tiver .player_id, filtra por ele.
+    Se não, tenta conciliar por athlete_name ≈ 'First Last%'.
+    """
+    # tenta coluna player_id (se existir no seu modelo)
+    by_fk_ok = False
+    if hasattr(models.Report, "player_id"):
+        q = select(models.Report).where(models.Report.player_id == player_id).order_by(desc(models.Report.date)).limit(limit)
+        r = await db.execute(q)
+        reports = r.scalars().all()
+        if reports:
+            by_fk_ok = True
+            return reports
+
+    # fallback por nome
+    p = await db.get(models.Player, player_id)
+    if not p:
+        raise HTTPException(404, "Atleta não encontrado")
+    name = _full_name(p)
+    if not name:
+        return []
+    like = f"{name}%"
+    q = select(models.Report).where(func.lower(models.Report.athlete_name).like(func.lower(like))).order_by(desc(models.Report.date)).limit(limit)
+    r = await db.execute(q)
+    return r.scalars().all()

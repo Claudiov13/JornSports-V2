@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Atletas • Jorn Sports</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        fontFamily: { sans: ['Inter','system-ui','sans-serif'] },
+        extend: {
+          colors: { neon:'#00FFC6', sport:{500:'#3C91FF'} },
+          boxShadow: { sport:'0 10px 30px rgba(60,145,255,0.25)' }
+        }
+      }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
+  <link rel="stylesheet" href="/public/style.css">
+  <style>html{scroll-behavior:smooth}</style>
+</head>
+<body class="bg-gray-900 text-white font-sans">
+  <!-- NAV -->
+  <header class="sticky top-0 z-40 header-glass header-shadow">
+    <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="/public/index.html" class="flex items-center gap-3">
+        <div class="h-9 w-9 rounded-xl bg-teal-400/10 border border-teal-300/30 flex items-center justify-center shadow-sport">
+          <span class="text-neon font-extrabold">J</span>
+        </div>
+        <span class="font-semibold tracking-wide text-white/90">Jorn Sports</span>
+      </a>
+      <nav class="hidden md:flex items-center gap-6 text-sm text-white/80">
+        <a href="/public/index.html#auth-section" class="hover:text-white">Acesso</a>
+        <a href="/public/index.html#upload-section" class="hover:text-white">Upload</a>
+        <a href="/public/index.html#alerts-section" class="hover:text-white">Alertas</a>
+        <a href="/public/index.html#form-container" class="hover:text-white">Formulário</a>
+        <a href="/public/index.html#results" class="hover:text-white">Resultados</a>
+        <a href="/public/players.html" class="text-white font-semibold">Atletas</a>
+      </nav>
+    </div>
+  </header>
+
+  <div class="max-w-7xl mx-auto p-4 md:p-8">
+    <h1 class="text-4xl font-black mb-6"><span class="text-orange-500">JORN</span> <span class="text-white">ATLETAS</span></h1>
+
+    <!-- Barra de ações -->
+    <section class="bg-gray-800 border border-gray-700 rounded-xl p-4 mb-8">
+      <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div class="text-white/80">Lista de atletas importados (CSV) e usados em relatórios de IA.</div>
+        <div class="flex items-center gap-2">
+          <input id="players-search" type="text" placeholder="Buscar por nome ou ID..." class="bg-gray-700 border border-gray-600 rounded-md px-3 py-2 w-64">
+          <button id="players-refresh" class="bg-white/10 hover:bg-white/20 rounded-md px-3 py-2">Atualizar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tabela -->
+    <section class="bg-gray-800 border border-gray-700 rounded-xl">
+      <table class="w-full text-left" aria-label="Atletas">
+        <thead class="bg-white/5">
+          <tr>
+            <th class="px-3 py-3 font-semibold text-gray-300">Atleta</th>
+            <th class="px-3 py-3 font-semibold text-gray-300">Métricas</th>
+            <th class="px-3 py-3 font-semibold text-gray-300">Último Registro</th>
+            <th class="px-3 py-3 font-semibold text-gray-300">Alertas não lidos</th>
+            <th class="px-3 py-3"></th>
+          </tr>
+        </thead>
+        <tbody id="players-table">
+          <tr><td colspan="5" class="px-3 py-6 text-center text-white/70">Carregando...</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </div>
+
+  <!-- Modal Detalhe -->
+  <div id="player-detail-modal" class="hidden fixed inset-0 bg-black/80 z-50 p-4 overflow-y-auto">
+    <div class="max-w-5xl mx-auto bg-gray-900 border border-gray-700 rounded-2xl p-5">
+      <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <div id="player-detail-initials" class="h-10 w-10 rounded-full bg-white/10 flex items-center justify-center font-bold"></div>
+          <div>
+            <div id="player-detail-name" class="text-xl font-semibold">—</div>
+            <div id="player-detail-meta" class="text-sm text-white/60">—</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="text-sm text-white/70">Alertas não lidos: <b id="player-detail-unread">0</b></span>
+          <button id="close-player-modal" class="bg-white/10 hover:bg-white/20 rounded-md px-3 py-1.5">Fechar</button>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <section class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="font-semibold text-orange-400">Série de Métricas</h3>
+            <select id="metric-filter" class="bg-gray-700 border border-gray-600 rounded-md px-3 py-1.5"></select>
+          </div>
+          <div class="h-64"><canvas id="metricChart"></canvas></div>
+          <div class="mt-4 overflow-x-auto">
+            <table class="w-full text-left text-sm">
+              <thead class="text-gray-400">
+                <tr><th class="px-3 py-2">Quando</th><th class="px-3 py-2">Métrica</th><th class="px-3 py-2">Valor</th><th class="px-3 py-2">Un.</th></tr>
+              </thead>
+              <tbody id="measurements-table"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="bg-gray-800 border border-gray-700 rounded-xl p-4">
+          <h3 class="font-semibold text-orange-400 mb-2">Alertas</h3>
+          <div id="player-alerts" class="space-y-2"></div>
+          <h3 class="font-semibold text-orange-400 mt-6 mb-2">Relatórios de IA</h3>
+          <div id="player-reports" class="space-y-2"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script src="/public/players.js"></script>
+</body>
+</html>
