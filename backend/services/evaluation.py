@@ -1,8 +1,9 @@
+from typing import Dict, List, Optional, Union, Any
 
 def _clamp01(x: float) -> float:
     return max(0.0, min(1.0, x))
 
-def _to_0_10_from_interval(x: float | None, best: float, worst: float, invert: bool = False) -> float:
+def _to_0_10_from_interval(x: Optional[float], best: float, worst: float, invert: bool = False) -> float:
     if x is None: return 5.0
     a, b = (best, worst) if not invert else (worst, best)
     if a == b: return 5.0
@@ -10,17 +11,30 @@ def _to_0_10_from_interval(x: float | None, best: float, worst: float, invert: b
     t = 1.0 - t if invert else t
     return 10.0 * _clamp01(t)
 
-def evaluate_athlete(d: dict) -> dict:
+def evaluate_athlete(d: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Avalia o atleta com base em dados físicos e técnicos.
+    Retorna um dicionário com scores, melhor posição e risco de lesão.
+    """
+    # 1. Normalização de métricas físicas
     speed = _to_0_10_from_interval(d.get("velocidade_sprint"), best=2.8, worst=4.5, invert=True)
     agility = _to_0_10_from_interval(d.get("agilidade"), best=9.0, worst=12.5, invert=True)
     jump = _to_0_10_from_interval(d.get("salto_vertical"), best=75.0, worst=30.0)
-    endurance = 5.0
+    endurance = 5.0 # Placeholder se não houver dado
     
-    def S(key): return float(d.get(key, 5.0))
+    def S(key: str) -> float: 
+        val = d.get(key)
+        if val is None: return 5.0
+        return float(val)
     
+    # 2. Cálculo do IMC
+    bmi: Optional[float] = None
     try:
-        bmi = d["peso"] / ((d["altura"] / 100.0) ** 2)
-    except (TypeError, ZeroDivisionError):
+        weight = float(d.get("peso", 0))
+        height_cm = float(d.get("altura", 0))
+        if height_cm > 0:
+            bmi = weight / ((height_cm / 100.0) ** 2)
+    except (TypeError, ValueError, ZeroDivisionError):
         bmi = None
 
     skill_keys = [
@@ -34,6 +48,7 @@ def evaluate_athlete(d: dict) -> dict:
     feats['salto'] = jump
     feats['resistencia'] = endurance
 
+    # 3. Pesos por posição
     positions = {
         "goleiro": {"compostura": 0.30, "salto": 0.25, "visao_jogo": 0.20, "passe_curto": 0.15, "passe_longo": 0.10},
         "zagueiro": {"desarme": 0.25, "cabeceio": 0.20, "compostura": 0.15, "passe_curto": 0.10, "agressividade": 0.15, "salto": 0.15},
@@ -52,20 +67,41 @@ def evaluate_athlete(d: dict) -> dict:
     
     best_position = max(pos_scores, key=pos_scores.get) if pos_scores else "N/A"
 
+    # 4. Potencial
     tech_avg = sum(feats[s] for s in skill_keys) / len(skill_keys)
     phys_avg = sum([speed, agility, jump, endurance]) / 4.0
     potential = round((0.6 * tech_avg + 0.4 * phys_avg) * 10, 1)
 
+    # 5. Risco de Lesão
     risk = 0.0
     notes = []
     if bmi is not None:
         if bmi > 25:
             risk += (bmi - 25) * 1.5
             if bmi >= 27.5: notes.append("IMC elevado, pode impactar agilidade e resistência.")
+        elif bmi < 18.5:
+             notes.append("IMC baixo, atenção à massa muscular.")
+    
+    # Idade (exemplo simples)
+    age = d.get("idade")
+    if age and isinstance(age, int):
+        if age > 32:
+            risk += (age - 32) * 0.5
+            notes.append("Idade avançada requer cuidado com recuperação.")
+    
     risk += (10.0 - agility) * 0.4 + S("agressividade") * 0.3
     injury_score = round(_clamp01(risk / 10.0) * 100.0, 0)
+    
     label = "baixo"
     if injury_score >= 67: label = "alto"
     elif injury_score >= 34: label = "médio"
 
-    return { "best_position": best_position, "position_scores": pos_scores, "potential_score": potential, "injury_risk_score": int(injury_score), "injury_risk_label": label, "bmi": round(bmi, 1) if bmi else None, "notes": notes }
+    return { 
+        "best_position": best_position, 
+        "position_scores": pos_scores, 
+        "potential_score": potential, 
+        "injury_risk_score": int(injury_score), 
+        "injury_risk_label": label, 
+        "bmi": round(bmi, 1) if bmi else None, 
+        "notes": notes 
+    }

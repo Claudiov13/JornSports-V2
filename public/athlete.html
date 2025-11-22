@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Detalhes do Atleta - Jorn Sports</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+                extend: {
+                    colors: {
+                        sport: { 50: '#F8FBFF', 500: '#3C91FF', 900: '#0C2C5C' },
+                        neon: '#00FFC6',
+                    },
+                    boxShadow: { sport: '0 10px 30px rgba(60,145,255,0.25)' }
+                }
+            }
+        }
+    </script>
+    <link rel="stylesheet" href="/public/style.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap"
+        rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.8/dist/purify.min.js"></script>
+</head>
+
+<body class="bg-gray-900 text-white font-sans">
+
+    <!-- NAV -->
+    <header class="sticky top-0 z-40 header-glass header-shadow">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
+            <a href="/public/index.html" class="flex items-center gap-3 group">
+                <div
+                    class="h-9 w-9 rounded-xl bg-teal-400/10 border border-teal-300/30 flex items-center justify-center shadow-sport">
+                    <span class="text-neon font-extrabold">J</span>
+                </div>
+                <span class="font-semibold tracking-wide text-white/90 group-hover:text-white transition">Jorn
+                    Sports</span>
+            </a>
+            <nav class="hidden md:flex items-center gap-6 text-sm text-white/80">
+                <a href="/public/index.html" class="nav-link hover:text-white transition">Voltar ao Dashboard</a>
+            </nav>
+        </div>
+    </header>
+
+    <main class="container mx-auto p-4 md:p-8 space-y-8">
+
+        <!-- Header do Atleta -->
+        <div id="athlete-header"
+            class="bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 flex flex-col md:flex-row items-center gap-6">
+            <div
+                class="h-24 w-24 rounded-full bg-gray-700 flex items-center justify-center text-3xl font-bold text-orange-500 border-2 border-orange-500/30">
+                <span id="athlete-initials">--</span>
+            </div>
+            <div class="text-center md:text-left flex-1">
+                <h1 id="athlete-name" class="text-3xl font-bold text-white">Carregando...</h1>
+                <p id="athlete-meta" class="text-gray-400 mt-1">---</p>
+            </div>
+            <div class="flex gap-3">
+                <button id="btn-refresh"
+                    class="bg-gray-700 hover:bg-gray-600 text-white px-4 py-2 rounded-lg transition">Atualizar</button>
+            </div>
+        </div>
+
+        <!-- Grid Principal -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Coluna Esquerda: Relatórios e Alertas -->
+            <div class="space-y-6 lg:col-span-1">
+
+                <!-- Alertas -->
+                <section class="bg-gray-800 p-5 rounded-lg shadow-lg border border-gray-700">
+                    <h2 class="text-xl font-semibold text-orange-400 mb-4 flex items-center justify-between">
+                        Alertas Recentes
+                        <span id="alert-count"
+                            class="bg-red-500/20 text-red-300 text-xs px-2 py-1 rounded-full">0</span>
+                    </h2>
+                    <div id="alerts-list" class="space-y-3 max-h-60 overflow-y-auto pr-2">
+                        <p class="text-gray-500 text-sm">Nenhum alerta recente.</p>
+                    </div>
+                </section>
+
+                <!-- Relatórios IA -->
+                <section class="bg-gray-800 p-5 rounded-lg shadow-lg border border-gray-700">
+                    <h2 class="text-xl font-semibold text-orange-400 mb-4">Relatórios de IA</h2>
+                    <div id="reports-list" class="space-y-3 max-h-80 overflow-y-auto pr-2">
+                        <p class="text-gray-500 text-sm">Carregando relatórios...</p>
+                    </div>
+                </section>
+            </div>
+
+            <!-- Coluna Direita: Métricas e Gráficos -->
+            <div class="lg:col-span-2 space-y-6">
+
+                <!-- Gráfico de Métricas -->
+                <section class="bg-gray-800 p-5 rounded-lg shadow-lg border border-gray-700">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-xl font-semibold text-orange-400">Evolução Física</h2>
+                        <select id="metric-select"
+                            class="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-sm focus:outline-none focus:border-orange-500">
+                            <option value="">Selecione uma métrica</option>
+                        </select>
+                    </div>
+                    <div class="h-72 w-full relative">
+                        <canvas id="metricsChart"></canvas>
+                    </div>
+                </section>
+
+                <!-- Visualização do Relatório Selecionado -->
+                <section id="report-viewer"
+                    class="hidden bg-gray-800 p-6 rounded-lg shadow-lg border border-gray-700 border-l-4 border-l-orange-500">
+                    <h3 id="report-viewer-title" class="text-2xl font-bold text-white mb-4">Detalhes da Análise</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div>
+                            <h4 class="text-orange-400 font-semibold mb-2">Relatório Técnico</h4>
+                            <div id="report-text" class="text-gray-300 text-sm space-y-2 leading-relaxed"></div>
+                        </div>
+                        <div>
+                            <h4 class="text-orange-400 font-semibold mb-2">Comparação & Treino</h4>
+                            <div id="report-extra" class="text-gray-300 text-sm space-y-2 leading-relaxed"></div>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+        </div>
+
+    </main>
+
+    <script type="module">
+        import { API_BASE_URL, authorizedFetch } from '/public/js/api.js';
+
+        const urlParams = new URLSearchParams(window.location.search);
+        const playerId = urlParams.get('id');
+
+        // Elementos
+        const els = {
+            initials: document.getElementById('athlete-initials'),
+            name: document.getElementById('athlete-name'),
+            meta: document.getElementById('athlete-meta'),
+            alertsList: document.getElementById('alerts-list'),
+            alertCount: document.getElementById('alert-count'),
+            reportsList: document.getElementById('reports-list'),
+            metricSelect: document.getElementById('metric-select'),
+            reportViewer: document.getElementById('report-viewer'),
+            reportText: document.getElementById('report-text'),
+            reportExtra: document.getElementById('report-extra'),
+            btnRefresh: document.getElementById('btn-refresh')
+        };
+
+        let chartInstance = null;
+
+        async function loadAthleteData() {
+            if (!playerId) {
+                els.name.textContent = "Atleta não identificado";
+                return;
+            }
+
+            try {
+                // 1. Perfil
+                const profileRes = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}`);
+                if (profileRes.ok) {
+                    const p = await profileRes.json();
+                    els.name.textContent = `${p.first_name} ${p.last_name || ''}`;
+                    els.initials.textContent = (p.first_name[0] + (p.last_name?.[0] || '')).toUpperCase();
+                    els.meta.textContent = `${p.position || 'Posição não def.'} • ${p.club_name || 'Clube não def.'} • ${p.age || '?'} anos`;
+                }
+
+                // 2. Alertas
+                const alertsRes = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/alerts`);
+                if (alertsRes.ok) {
+                    const alerts = await alertsRes.json();
+                    els.alertCount.textContent = alerts.length;
+                    els.alertsList.innerHTML = alerts.length ? '' : '<p class="text-gray-500 text-sm">Nenhum alerta.</p>';
+                    alerts.forEach(a => {
+                        const div = document.createElement('div');
+                        div.className = 'bg-black/20 p-3 rounded border-l-2 border-red-500';
+                        div.innerHTML = `<p class="text-orange-300 font-bold text-xs">${a.metric}</p><p class="text-sm">${a.message}</p>`;
+                        els.alertsList.appendChild(div);
+                    });
+                }
+
+                // 3. Relatórios
+                const reportsRes = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/reports`);
+                if (reportsRes.ok) {
+                    const reports = await reportsRes.json();
+                    els.reportsList.innerHTML = reports.length ? '' : '<p class="text-gray-500 text-sm">Nenhum relatório.</p>';
+                    reports.forEach(r => {
+                        const btn = document.createElement('button');
+                        btn.className = 'w-full text-left bg-white/5 hover:bg-white/10 p-3 rounded transition flex justify-between items-center group';
+                        btn.innerHTML = `
+              <span class="text-sm font-medium text-gray-200 group-hover:text-white">Análise ${new Date(r.date).toLocaleDateString()}</span>
+              <span class="text-xs text-orange-500">Ver &rarr;</span>
+            `;
+                        btn.onclick = () => showReport(r);
+                        els.reportsList.appendChild(btn);
+                    });
+                }
+
+                // 4. Métricas (para o gráfico)
+                const metricsRes = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/measurements`);
+                if (metricsRes.ok) {
+                    const measurements = await metricsRes.json();
+                    const uniqueMetrics = [...new Set(measurements.map(m => m.metric))];
+
+                    els.metricSelect.innerHTML = '<option value="">Selecione...</option>';
+                    uniqueMetrics.forEach(m => {
+                        const opt = document.createElement('option');
+                        opt.value = m;
+                        opt.textContent = m;
+                        els.metricSelect.appendChild(opt);
+                    });
+
+                    els.metricSelect.onchange = (e) => {
+                        const metric = e.target.value;
+                        if (!metric) return;
+                        const data = measurements.filter(m => m.metric === metric).sort((a, b) => new Date(a.date) - new Date(b.date));
+                        renderChart(metric, data);
+                    };
+
+                    // Seleciona o primeiro automaticamente
+                    if (uniqueMetrics.length > 0) {
+                        els.metricSelect.value = uniqueMetrics[0];
+                        els.metricSelect.dispatchEvent(new Event('change'));
+                    }
+                }
+
+            } catch (error) {
+                console.error("Erro ao carregar atleta:", error);
+                els.name.textContent = "Erro ao carregar dados";
+            }
+        }
+
+        function showReport(report) {
+            els.reportViewer.classList.remove('hidden');
+            els.reportText.innerHTML = report.analysis.relatorio || "Sem conteúdo.";
+            els.reportExtra.innerHTML = (report.analysis.comparacao || "") + "<br/><br/>" + (report.analysis.plano_treino || "");
+            els.reportViewer.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function renderChart(label, data) {
+            const ctx = document.getElementById('metricsChart').getContext('2d');
+            if (chartInstance) chartInstance.destroy();
+
+            chartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: data.map(d => new Date(d.date).toLocaleDateString()),
+                    datasets: [{
+                        label: label,
+                        data: data.map(d => d.value),
+                        borderColor: '#f97316',
+                        backgroundColor: 'rgba(249, 115, 22, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { grid: { color: 'rgba(255,255,255,0.1)' }, ticks: { color: '#aaa' } },
+                        x: { grid: { display: false }, ticks: { color: '#aaa' } }
+                    }
+                }
+            });
+        }
+
+        els.btnRefresh.onclick = loadAthleteData;
+        loadAthleteData();
+
+    </script>
+</body>
+
+</html>

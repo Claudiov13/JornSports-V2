@@ -511,12 +511,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  Array.from(elements.viewTabs || []).forEach(btn => {
+  // --- NAV BUTTONS LISTENER ---
+  document.querySelectorAll('button[data-view-target]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const target = btn.getAttribute('data-view-target') || 'manual';
+      const target = btn.getAttribute('data-view-target');
       switchView(target);
+      // Fecha drawer mobile se estiver aberto
+      const drawer = document.getElementById('nav-drawer');
+      if (drawer && !drawer.classList.contains('hidden')) {
+        drawer.classList.add('hidden');
+      }
     });
   });
+
+  // Toggle Drawer
+  const navToggle = document.getElementById('nav-toggle');
+  if (navToggle) {
+    navToggle.addEventListener('click', () => {
+      const drawer = document.getElementById('nav-drawer');
+      if (drawer) drawer.classList.toggle('hidden');
+    });
+  }
+
   switchView(currentView);
 
   if (elements.manualForm) {
@@ -555,7 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
       manualCoachCodeDirty = value.trim().length > 0;
       updateManualPreview();
     });
-  }  updateManualPreview();
+  } updateManualPreview();
 
   // === NOVOS LISTENERS: Upload e Alertas ===
   if (elements.uploadCsvBtn) {
@@ -617,7 +633,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (nomeField && nomeField.value && !/^[a-zA-Z\s]+$/.test(nomeField.value)) {
       errors.push('O campo "Nome" deve conter apenas letras e espacos.');
     }
-    
+
     const sobrenomeField = document.getElementById('sobrenome');
     if (sobrenomeField && sobrenomeField.value && !/^[a-zA-Z\s]+$/.test(sobrenomeField.value)) {
       errors.push('O campo "Sobrenome" deve conter apenas letras e espacos.');
@@ -659,10 +675,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- FUNCOES DE MANIPULACAO DO DOM E DADOS ---
   function getFormData() {
     const data = {};
-    
+
     const integerFields = [
-      'idade', 'altura', 'envergadura', 'salto_vertical', 'controle_bola', 
-      'drible', 'passe_curto', 'passe_longo', 'finalizacao', 'cabeceio', 
+      'idade', 'altura', 'envergadura', 'salto_vertical', 'controle_bola',
+      'drible', 'passe_curto', 'passe_longo', 'finalizacao', 'cabeceio',
       'desarme', 'visao_jogo', 'compostura', 'agressividade'
     ];
     const floatFields = ['peso', 'percentual_gordura', 'velocidade_sprint', 'agilidade'];
@@ -733,7 +749,7 @@ document.addEventListener('DOMContentLoaded', () => {
       <p class="text-red-400 font-bold mb-2">Não foi possível gerar a análise. Detalhes:</p>
       ${errorMessage}
     `;
-    
+
     elements.playerComparisonDiv.innerHTML = '';
     elements.trainingPlanDiv.innerHTML = '';
     if (skillChart) skillChart.destroy();
@@ -741,8 +757,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Campos de habilidades usados no grafico
   const SKILL_FIELDS = [
-    'controle_bola','drible','passe_curto','passe_longo','finalizacao',
-    'cabeceio','desarme','visao_jogo','compostura','agressividade'
+    'controle_bola', 'drible', 'passe_curto', 'passe_longo', 'finalizacao',
+    'cabeceio', 'desarme', 'visao_jogo', 'compostura', 'agressividade'
   ];
 
   function populateSkillsFromData(src) {
@@ -751,16 +767,16 @@ document.addEventListener('DOMContentLoaded', () => {
       const val = Number(src[id]);
       if (!Number.isFinite(val)) return;
       const input = document.getElementById(id);
-      const span  = document.getElementById(`${id}_value`);
+      const span = document.getElementById(`${id}_value`);
       if (input) input.value = val;
-      if (span)  span.textContent = String(val);
+      if (span) span.textContent = String(val);
     });
   }
 
   function readSkillsFromDOM() {
     const ids = [
-      'controle_bola','drible','passe_curto','passe_longo','finalizacao',
-      'cabeceio','desarme','visao_jogo','compostura','agressividade'
+      'controle_bola', 'drible', 'passe_curto', 'passe_longo', 'finalizacao',
+      'cabeceio', 'desarme', 'visao_jogo', 'compostura', 'agressividade'
     ];
     const skills = {};
     ids.forEach(id => {
@@ -774,13 +790,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const ctx = document.getElementById('skillChart').getContext('2d');
 
     const campos = [
-      'controle_bola','drible','passe_curto','passe_longo','finalizacao',
-      'cabeceio','desarme','visao_jogo','compostura','agressividade'
+      'controle_bola', 'drible', 'passe_curto', 'passe_longo', 'finalizacao',
+      'cabeceio', 'desarme', 'visao_jogo', 'compostura', 'agressividade'
     ];
 
     const labels = [
-      'Controle de Bola','Drible','Passe Curto','Passe Longo','Finalizacao',
-      'Cabeceio','Desarme','Visao de Jogo','Compostura','Agressividade'
+      'Controle de Bola', 'Drible', 'Passe Curto', 'Passe Longo', 'Finalizacao',
+      'Cabeceio', 'Desarme', 'Visao de Jogo', 'Compostura', 'Agressividade'
     ];
 
     const source = dadosAtleta || readSkillsFromDOM();
@@ -958,7 +974,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch { /* ignore */ }
       throw new Error(errorText);
     }
-    
+
     return await response.json();
   }
 
@@ -1117,7 +1133,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <p class="text-[11px] text-white/50 mt-1">${a.generated_at ? new Date(a.generated_at).toLocaleString('pt-BR') : ''}</p>
       `;
 
-const ackBtn = document.createElement('button');
+      const ackBtn = document.createElement('button');
       ackBtn.className = 'bg-white/10 hover:bg-white/20 text-white text-sm font-semibold py-1 px-3 rounded';
       ackBtn.textContent = a.acknowledged ? 'Reconhecido' : 'Marcar como lido';
       ackBtn.disabled = !!a.acknowledged;
@@ -1421,93 +1437,94 @@ const ackBtn = document.createElement('button');
     renderPlayersTable(cachedPlayers, { mode: cachedPlayersMode });
   }
 
-// Abre modal de detalhe do atleta
+  // Abre página de detalhe do atleta
   async function openPlayerDetail(playerId) {
-    if (!elements.playerDetailModal) return;
-    // limpa UI
-    setPlayerHeader({ initials: '?', name: '—', meta: '' });
-    setPlayerAlerts([]);
-    setPlayerReports([]);
-    setMetricOptions([]);
-    setMeasurementsTable([]);
-
-    if (!backendFeatures.players) {
-      // sem endpoints, sÃ³ informa
-      setPlayerHeader({ initials: '#', name: `Atleta ${playerId.slice(0, 8)}…`, meta: 'Detalhes indisponÃ­veis neste backend (sem /api/players)' });
-      elements.playerDetailUnread.textContent = '0';
-      showPlayerModal();
-      return;
-    }
-
-    try {
-      // Carrega perfil (lista de players jÃ¡ trouxe nome? pode haver endpoint GET /api/players/{id})
-      let profile = null;
-      try {
-        const resp = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}`);
-        if (resp.ok) profile = await resp.json();
-      } catch { /* ignore */ }
-
-      const fullName = profile ? ((profile.first_name || '') + ' ' + (profile.last_name || '')).trim() : '';
-      const headerMeta = [];
-      if (profile && profile.player_code) headerMeta.push(`ID ${sanitizeCode(profile.player_code)}`);
-      if (profile && (profile.club_name || profile.club_code)) headerMeta.push(profile.club_name || profile.club_code);
-      if (profile && profile.coach_name) headerMeta.push(`Técnico ${profile.coach_name}`);
-      if (profile && profile.age) headerMeta.push(`${profile.age} anos`);
-      setPlayerHeader({
-        initials: initialsFromName(fullName, playerId),
-        name: fullName || `Atleta ${playerId.slice(0,8)}…`,
-        meta: headerMeta.join(' • ')
-      });
-
-      // ALERTAS do atleta
-      let alerts = [];
-      try {
-        const ra = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/alerts`);
-        if (ra.ok) alerts = await ra.json();
-      } catch { /* ignore */ }
-      setPlayerAlerts(alerts);
-      elements.playerDetailUnread.textContent = String(Array.isArray(alerts) ? alerts.filter(a => !a.acknowledged).length : 0);
-
-      // RELATÃ“RIOS do atleta
-      let reports = [];
-      try {
-        const rr = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/reports`);
-        if (rr.ok) reports = await rr.json();
-      } catch { /* ignore */ }
-      setPlayerReports(reports);
-
-      // MEDIÃ‡Ã•ES
-      // 1) carrega amostra para descobrir mÃ©tricas disponÃ­veis
-      let measurements = [];
-      try {
-        const rm = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/measurements`);
-        if (rm.ok) measurements = await rm.json();
-      } catch { /* ignore */ }
-
-      const metrics = Array.from(new Set(measurements.map(m => m.metric))).sort();
-      setMetricOptions(metrics);
-
-      if (metrics.length) {
-        elements.metricFilter.value = metrics[0];
-        await loadMetricSeries(playerId, metrics[0]);
-      } else {
-        drawMetricChart([], []);
-      }
-
-      // listener para trocar mÃ©trica
-      if (elements.metricFilter) {
-        elements.metricFilter.onchange = async (e) => {
-          const metric = e.target.value;
-          await loadMetricSeries(playerId, metric);
-        };
-      }
-
-      showPlayerModal();
-    } catch (e) {
-      console.error(e);
-      setAuthStatus('Falha ao abrir detalhe do atleta.', true);
-    }
+    window.location.href = `/public/athlete.html?id=${playerId}`;
   }
+  // limpa UI
+  setPlayerHeader({ initials: '?', name: '—', meta: '' });
+  setPlayerAlerts([]);
+  setPlayerReports([]);
+  setMetricOptions([]);
+  setMeasurementsTable([]);
+
+  if (!backendFeatures.players) {
+    // sem endpoints, sÃ³ informa
+    setPlayerHeader({ initials: '#', name: `Atleta ${playerId.slice(0, 8)}…`, meta: 'Detalhes indisponÃ­veis neste backend (sem /api/players)' });
+    elements.playerDetailUnread.textContent = '0';
+    showPlayerModal();
+    return;
+  }
+
+  try {
+    // Carrega perfil (lista de players jÃ¡ trouxe nome? pode haver endpoint GET /api/players/{id})
+    let profile = null;
+    try {
+      const resp = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}`);
+      if (resp.ok) profile = await resp.json();
+    } catch { /* ignore */ }
+
+    const fullName = profile ? ((profile.first_name || '') + ' ' + (profile.last_name || '')).trim() : '';
+    const headerMeta = [];
+    if (profile && profile.player_code) headerMeta.push(`ID ${sanitizeCode(profile.player_code)}`);
+    if (profile && (profile.club_name || profile.club_code)) headerMeta.push(profile.club_name || profile.club_code);
+    if (profile && profile.coach_name) headerMeta.push(`Técnico ${profile.coach_name}`);
+    if (profile && profile.age) headerMeta.push(`${profile.age} anos`);
+    setPlayerHeader({
+      initials: initialsFromName(fullName, playerId),
+      name: fullName || `Atleta ${playerId.slice(0, 8)}…`,
+      meta: headerMeta.join(' • ')
+    });
+
+    // ALERTAS do atleta
+    let alerts = [];
+    try {
+      const ra = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/alerts`);
+      if (ra.ok) alerts = await ra.json();
+    } catch { /* ignore */ }
+    setPlayerAlerts(alerts);
+    elements.playerDetailUnread.textContent = String(Array.isArray(alerts) ? alerts.filter(a => !a.acknowledged).length : 0);
+
+    // RELATÃ“RIOS do atleta
+    let reports = [];
+    try {
+      const rr = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/reports`);
+      if (rr.ok) reports = await rr.json();
+    } catch { /* ignore */ }
+    setPlayerReports(reports);
+
+    // MEDIÃ‡Ã•ES
+    // 1) carrega amostra para descobrir mÃ©tricas disponÃ­veis
+    let measurements = [];
+    try {
+      const rm = await authorizedFetch(`${API_BASE_URL}/api/players/${playerId}/measurements`);
+      if (rm.ok) measurements = await rm.json();
+    } catch { /* ignore */ }
+
+    const metrics = Array.from(new Set(measurements.map(m => m.metric))).sort();
+    setMetricOptions(metrics);
+
+    if (metrics.length) {
+      elements.metricFilter.value = metrics[0];
+      await loadMetricSeries(playerId, metrics[0]);
+    } else {
+      drawMetricChart([], []);
+    }
+
+    // listener para trocar mÃ©trica
+    if (elements.metricFilter) {
+      elements.metricFilter.onchange = async (e) => {
+        const metric = e.target.value;
+        await loadMetricSeries(playerId, metric);
+      };
+    }
+
+    showPlayerModal();
+  } catch (e) {
+    console.error(e);
+    setAuthStatus('Falha ao abrir detalhe do atleta.', true);
+  }
+}
 
   function showPlayerModal() {
     elements.playerDetailModal.classList.remove('hidden');
@@ -1609,7 +1626,7 @@ const ackBtn = document.createElement('button');
       const items = await r.json();
       // Esperado: [{recorded_at, value, unit}]
       const labels = items.map(i => new Date(i.recorded_at)).sort((a, b) => a - b).map(d => d.toLocaleDateString('pt-BR'));
-      const data = items.sort((a,b)=> new Date(a.recorded_at)-new Date(b.recorded_at)).map(i => Number(i.value || 0));
+      const data = items.sort((a, b) => new Date(a.recorded_at) - new Date(b.recorded_at)).map(i => Number(i.value || 0));
       drawMetricChart(labels, data);
       setMeasurementsTable(items);
     } catch (e) {
@@ -1657,7 +1674,7 @@ const ackBtn = document.createElement('button');
     }
     items
       .slice()
-      .sort((a,b)=> new Date(b.recorded_at)-new Date(a.recorded_at))
+      .sort((a, b) => new Date(b.recorded_at) - new Date(a.recorded_at))
       .forEach(i => {
         const tr = document.createElement('tr');
         tr.className = 'hover:bg-white/5';
@@ -1681,7 +1698,7 @@ const ackBtn = document.createElement('button');
       const inits = (a + b).toUpperCase();
       if (inits.trim()) return inits;
     }
-    return (String(id || '?').slice(0,2) || '??').toUpperCase();
+    return (String(id || '?').slice(0, 2) || '??').toUpperCase();
   }
   function safeAttr(v) {
     return String(v).replace(/"/g, '&quot;');

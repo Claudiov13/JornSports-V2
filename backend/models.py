@@ -32,7 +32,7 @@ class Measurement(Base):
     __tablename__ = "measurements"
 
     id = Column(Integer, primary_key=True)
-    player_id = Column(UUID(as_uuid=True), ForeignKey("players.id"))
+    player_id = Column(UUID(as_uuid=True), ForeignKey("players.id"), index=True)
     metric = Column(String)
     value = Column(Float)
     unit = Column(String)
